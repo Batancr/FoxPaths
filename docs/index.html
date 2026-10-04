@@ -45,6 +45,11 @@ button,input,select{font:inherit;color:inherit}
 .demo-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:var(--signal-soft);color:var(--signal);font-size:13px;font-weight:700}
 .demo-pill::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--signal)}
 
+.cities{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 16px}
+.cities button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 16px;cursor:pointer;font-family:var(--f-display);font-weight:700;font-size:18px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
+.cities button:hover{border-color:var(--ink);color:var(--ink)}
+.cities button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.loading{padding:28px 4px;color:var(--muted)}
 .tabs{display:none}
 .layout{display:grid;gap:20px;align-items:start}
 @media (min-width:900px){.layout{grid-template-columns:minmax(320px,390px) minmax(0,1fr)}}
@@ -166,10 +171,12 @@ details.limits[open] summary{margin-bottom:8px}
   <header class="top">
     <div class="brand">
       <h1>FoxPaths</h1>
-      <p>Plan a whole day of stops around the bus · Peterborough, ON</p>
+      <p id="city-sub">Plan a whole day of stops around the bus</p>
     </div>
-    <span class="demo-pill">Routes 2, 3, 5 and 6 · times between main stops are estimates</span>
+    <span class="demo-pill" id="city-pill" hidden></span>
   </header>
+
+  <nav class="cities" id="cities" aria-label="City"></nav>
 
   <div class="tabs" role="tablist">
     <button role="tab" id="tab-setup" data-view="setup" aria-selected="false">Your day</button>
@@ -182,33 +189,30 @@ details.limits[open] summary{margin-bottom:8px}
   </div>
 
   <footer class="foot">
-    <p>Route lines, bus stops and the timetables for Route 2 Chemong, Route 3 Park, Route 5 The Parkway and Route 6 Sherbrooke come from the City of Peterborough's route map and schedule pages (2024 routes, as published in October 2026). The timetables list times only at main stops; times at the stops in between are estimated by spacing them evenly by distance. Other routes are drawn on the map but can't be used for trips yet.</p>
+    <p id="city-source"></p>
     <p>Walking times are straight-line distance with a detour allowance at about 4.8 km/h, so real walks may differ. Always check the official schedule before you travel.</p>
     <p>Google Maps buttons open one leg at a time, because Google Maps doesn't support multi-stop trips by transit. Google shows its own live bus options, which may differ from this plan.</p>
   </footer>
 </div>
 
-<script src="data/peterborough.js"></script>
 <script id="engine">
-/* ================= REAL DATA (City of Peterborough files, Oct 2026) ================= */
-const BUNDLE=window.FOXPATH_DATA;
-const [LON0,LAT0]=BUNDLE.origin,[KX,KY]=BUNDLE.k;
-const ll=(lon,lat)=>({x:(lon-LON0)*KX,y:(lat-LAT0)*KY});
-// Locations from the City of Peterborough address locator, except where noted
-const PLACES=[
-  {id:'home',n:'Home',sub:'Example: near Hilliard and Marina',x:-0.241,y:2.975,cat:'home',q:'Hilliard and Marina, Peterborough, ON'},
-  {id:'work',n:'Work (Baker Tilly)',sub:'272 Charlotte St',...ll(-78.3251415,44.303409),cat:'work',q:'Baker Tilly, 272 Charlotte Street, Peterborough, ON'},
-  {id:'kfc',n:'KFC, Chemong Rd',sub:'786 Chemong Rd (placeholder)',...ll(-78.328989,44.316936),cat:'food',q:'KFC, 786 Chemong Road, Peterborough, ON'},
-  {id:'lib',n:'Peterborough Public Library',sub:'345 Aylmer St N',...ll(-78.3235305,44.303931),cat:'study',q:'Peterborough Public Library, 345 Aylmer St N, Peterborough, ON'},
-  {id:'bata',n:'Bata Library, Trent University',sub:'Trent campus (approximate spot)',...ll(-78.2916,44.3572),cat:'study',q:'Bata Library, Trent University, Peterborough, ON'},
-  {id:'fleming',n:'Fleming College',sub:'Sutherland campus (approximate spot)',...ll(-78.3766,44.2672),cat:'school',q:'Fleming College Sutherland Campus, Peterborough, ON'},
-  {id:'terminal',n:'Peterborough Terminal',sub:'Simcoe St, downtown',...ll(-78.321846,44.304634),cat:'transit',q:'Peterborough Bus Terminal, Simcoe Street, Peterborough, ON'},
-  {id:'lansdowne',n:'Lansdowne Place',sub:'645 Lansdowne St W',...ll(-78.331302,44.283456),cat:'shop',q:'Lansdowne Place, 645 Lansdowne St W, Peterborough, ON'},
+/* ================= CITIES ================= */
+// Each city's data file sets window.FOXPATH_CITIES[id]. Files load only when that city is opened.
+const CITY_LIST=[
+  {id:'peterborough',name:'Peterborough',file:'data/peterborough.js'},
+  {id:'newmarket',name:'Newmarket',file:'data/newmarket.js'},
 ];
-const CATS={study:'Any library'};
-const ROUTES=Object.values(BUNDLE.routes);
-const TIMED_IDS=new Set(BUNDLE.patterns.flatMap(p=>p.timed));
-const placeById=Object.fromEntries(PLACES.map(p=>[p.id,p]));
+let BUNDLE,LON0,LAT0,KX,KY,PLACES,CATS,ROUTES,TIMED_IDS,placeById,NET;
+function setCity(id){
+  BUNDLE=window.FOXPATH_CITIES[id];
+  [LON0,LAT0]=BUNDLE.origin;[KX,KY]=BUNDLE.k;
+  PLACES=BUNDLE.places.map(p=>({...p,x:p.p[0],y:p.p[1]}));
+  CATS=BUNDLE.cats||{};
+  ROUTES=Object.values(BUNDLE.routes);
+  TIMED_IDS=BUNDLE.exact?null:new Set(BUNDLE.patterns.flatMap(p=>p.timed));
+  placeById=Object.fromEntries(PLACES.map(p=>[p.id,p]));
+  NET=buildNet('weekday');
+}
 
 /* ================= NETWORK ================= */
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
@@ -232,11 +236,11 @@ function buildNet(day){
     });
   });
   conns.sort((a,b)=>a.dep-b.dep||a.arr-b.arr||a.trip-b.trip||a.seq-b.seq);
+  const served=new Uint8Array(stops.length);conns.forEach(c=>{served[c.from]=1;served[c.to]=1;});
   const foot=stops.map(()=>[]);
   stops.forEach(a=>stops.forEach(b=>{if(a!==b&&dist(a,b)<=0.5)foot[a.i].push({s:b.i,w:walkMin(a,b)});}));
-  return {stops,idx,trips,conns,foot,day};
+  return {stops,idx,trips,conns,foot,day,served};
 }
-let NET=buildNet('weekday');
 
 function lowerBound(arr,t,key){let lo=0,hi=arr.length;while(lo<hi){const m=(lo+hi)>>1;if(key(arr[m])<t)lo=m+1;else hi=m;}return lo;}
 
@@ -245,7 +249,7 @@ function makeRouter(o){
   const nearCache=new Map(),profCache=new Map();
   function near(p){
     if(nearCache.has(p.id))return nearCache.get(p.id);
-    const out=[];NET.stops.forEach(s=>{const w=walkMin(p,s);if(w<=o.maxWalk)out.push({s:s.i,w});});
+    const out=[];NET.stops.forEach(s=>{if(!NET.served[s.i])return;const w=walkMin(p,s);if(w<=o.maxWalk)out.push({s:s.i,w});});
     nearCache.set(p.id,out);return out;
   }
   function query(A,B,t){
@@ -259,7 +263,7 @@ function makeRouter(o){
     let best=Infinity,bestStop=-1;
     const reach=(s,a,p)=>{
       if(a<arrive[s]){arrive[s]=a;ptr[s]=p;board[s]=Math.min(board[s],a+1);
-        if(dw[s]>=0&&a+dw[s]<best){best=a+dw[s];bestStop=s;}return true;}
+        if(p.k==='t'&&dw[s]>=0&&a+dw[s]<best){best=a+dw[s];bestStop=s;}return true;}
       return false;
     };
     for(let i=lowerBound(C,t,c=>c.dep);i<C.length;i++){
@@ -428,7 +432,8 @@ function solve(inp){
   const reasons=[];
   const placeIds=[inp.start.place,inp.end.place,...inp.acts.flatMap(a=>a.place.startsWith('any:')?PLACES.filter(p=>p.cat===a.place.slice(4)).map(p=>p.id):[a.place])];
   const far=[...new Set(placeIds)].map(id=>placeById[id]).filter(p=>!R.near(p).length);
-  if(far.length)reasons.push(`No bus stop is within ${inp.maxWalk} min walk of ${far.map(p=>p.n).join(', ')}. Raise the max walk to a stop.`);
+  const dayName={weekday:'weekdays',saturday:'Saturdays',sunday:'Sundays and holidays'}[inp.day];
+  if(far.length)reasons.push(`On ${dayName}, no stop with bus service is within ${inp.maxWalk} min walk of ${far.map(p=>p.n).join(' or ')}. Raise the max walk to a stop, pick another day, or choose a different place.`);
   const relaxed=searchDays({...inp,goal:'early'},R,0,1440+240);
   if(relaxed.leaves.length){
     let bestEnd=Infinity;relaxed.leaves.forEach(p=>bestEnd=Math.min(bestEnd,p.end));
@@ -444,34 +449,42 @@ function solve(inp){
 function fmt(m){m=Math.round(m);const d=Math.floor(m/1440);m-=d*1440;let h=Math.floor(m/60),mm=m%60;const ap=h>=12?'pm':'am';h=h%12||12;return `${h}:${String(mm).padStart(2,'0')} ${ap}`+(d?' (+1 day)':'');}
 function fmtDur(m){m=Math.round(m);if(m<60)return m+' min';const h=Math.floor(m/60),r=m%60;return r?`${h} h ${r} min`:`${h} h`;}
 function parseT(s){if(!s)return null;const [h,m]=s.split(':').map(Number);return Number.isFinite(h)?h*60+(m||0):null;}
-if(typeof module!=='undefined')module.exports={solve,fmt,fmtDur,parseT,getNet:()=>NET,PLACES,placeById};
+if(typeof module!=='undefined')module.exports={solve,fmt,fmtDur,parseT,setCity,getNet:()=>NET,getPlaces:()=>placeById};
 </script>
 
 <script>
 /* ================= UI ================= */
-const DEFAULT_STATE={
-  start:{place:'home',from:'10:00',to:'11:00'},
-  end:{place:'home',from:'18:00',to:'19:00'},
-  acts:[
-    {id:'a1',label:'Eat',place:'kfc',min:20,max:30,after:'',by:''},
-    {id:'a2',label:'Study',place:'lib',min:180,max:'',after:'',by:''},
-  ],
-  day:['sunday','weekday','weekday','weekday','weekday','weekday','saturday'][new Date().getDay()],
-  reorder:false,maxWalk:10,buffer:2,walkDirect:12,goal:'max:a2',
-  addr:{home:'Hilliard and Marina, Peterborough, ON',work:'Baker Tilly, 272 Charlotte Street, Peterborough, ON'}
-};
-let state;
-try{state=JSON.parse(localStorage.getItem('foxpath-v1'))||null;}catch(e){state=null;}
-if(!state||!Array.isArray(state.acts))state=structuredClone(DEFAULT_STATE);
-if(!state.addr)state.addr={...DEFAULT_STATE.addr};
-if(!state.day)state.day=DEFAULT_STATE.day;
-const okPlace=v=>placeById[v]||(v&&v.startsWith('any:')&&CATS[v.slice(4)]);
-state.acts.forEach(a=>{if(!okPlace(a.place))a.place='lib';});
-['start','end'].forEach(k=>{if(!placeById[state[k].place])state[k].place='home';});
+const DAY_TODAY=['sunday','weekday','weekday','weekday','weekday','weekday','saturday'][new Date().getDay()];
+function cityDefaults(B){
+  const d=B.defaults;
+  return {start:{place:'home',from:'10:00',to:'11:00'},end:{place:'home',from:'18:00',to:'19:00'},
+    acts:structuredClone(d.acts),day:DAY_TODAY,reorder:false,maxWalk:d.maxWalk||10,buffer:2,walkDirect:12,
+    goal:'max:'+d.acts[d.acts.length-1].id,addr:{...d.addr}};
+}
+let store=null;
+try{store=JSON.parse(localStorage.getItem('foxpaths-v2'));}catch(e){}
+if(!store||!store.cities){
+  store={city:'peterborough',cities:{}};
+  try{const old=JSON.parse(localStorage.getItem('foxpath-v1'));if(old&&Array.isArray(old.acts))store.cities.peterborough=old;}catch(e){}
+}
+const hashCity=CITY_LIST.find(c=>c.id===location.hash.slice(1));
+if(hashCity)store.city=hashCity.id;
+if(!CITY_LIST.some(c=>c.id===store.city))store.city='peterborough';
+let state=null;
+function useCityState(){
+  state=store.cities[store.city]||cityDefaults(BUNDLE);
+  const def=cityDefaults(BUNDLE);
+  for(const k of Object.keys(def))if(state[k]==null)state[k]=def[k];
+  const okPlace=v=>placeById[v]||(v&&v.startsWith('any:')&&CATS[v.slice(4)]);
+  if(!Array.isArray(state.acts))state.acts=def.acts;
+  state.acts.forEach(a=>{if(!okPlace(a.place))a.place=def.acts[0].place;});
+  ['start','end'].forEach(k=>{if(!placeById[state[k].place])state[k].place='home';});
+  store.cities[store.city]=state;
+}
 let result=null,selected=0,nextId=Date.now()%100000;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function save(){try{localStorage.setItem('foxpath-v1',JSON.stringify(state));}catch(e){}}
+function save(){store.cities[store.city]=state;try{localStorage.setItem('foxpaths-v2',JSON.stringify(store));}catch(e){}}
 
 function placeSelect(id,val,allowAny){
   let h=`<select id="${id}">`;
@@ -607,7 +620,7 @@ function planRows(plan,inp){
       else if(st.k==='wait')rows.push({k:'wait',t:st.t0,main:`Wait ${fmtDur(st.t1-st.t0)} at ${esc(NET.stops[st.at].n)}`,sub:`Bus leaves at ${fmt(st.t1)}`});
       else if(st.k==='ride'){const tr=NET.trips[st.trip];
         rows.push({k:'ride',t:st.t0,rc:tr.r.c,main:`<span class="route" style="--rc:${tr.r.c}">${tr.r.id}</span>${esc(tr.r.name)} ${tr.label?esc(tr.label.charAt(0).toLowerCase()+tr.label.slice(1)):'toward '+esc(tr.head)}`,
-          sub:`Board at ${esc(NET.stops[st.from].n)} · get off at ${esc(NET.stops[st.to].n)}, ${fmt(st.t1)} · ${fmtDur(st.t1-st.t0)}, ${st.n} stop${st.n>1?'s':''}`+((!TIMED_IDS.has(NET.stops[st.from].id)||!TIMED_IDS.has(NET.stops[st.to].id))?' · estimated, not a timed stop':'')});}
+          sub:`Board at ${esc(NET.stops[st.from].n)} · get off at ${esc(NET.stops[st.to].n)}, ${fmt(st.t1)} · ${fmtDur(st.t1-st.t0)}, ${st.n} stop${st.n>1?'s':''}`+((TIMED_IDS&&(!TIMED_IDS.has(NET.stops[st.from].id)||!TIMED_IDS.has(NET.stops[st.to].id)))?' · estimated, not a timed stop':'')});}
     }
     if(k<n){
       const act=inp.acts[plan.order[k]],d=plan.durs[act.id],s=leg.s,early=s-leg.op.arr;
@@ -665,9 +678,12 @@ function renderMain(){
 }
 
 /* ---------- route map (real City of Peterborough route lines) ---------- */
-const CITY_LINES=BUNDLE.lines.filter(l=>l.r!=='31'&&l.r!=='32');
-const MB=(()=>{let a=[Infinity,Infinity,-Infinity,-Infinity];CITY_LINES.forEach(l=>l.pts.forEach(([x,y])=>{a[0]=Math.min(a[0],x);a[1]=Math.min(a[1],y);a[2]=Math.max(a[2],x);a[3]=Math.max(a[3],y);}));PLACES.forEach(p=>{a[0]=Math.min(a[0],p.x);a[1]=Math.min(a[1],p.y);a[2]=Math.max(a[2],p.x);a[3]=Math.max(a[3],p.y);});return [a[0]-.3,a[1]-.3,a[2]+.3,a[3]+.3];})();
-const S=520/(MB[2]-MB[0]);
+let CITY_LINES,MB,S;
+function computeMapGeom(){
+CITY_LINES=BUNDLE.lines.filter(l=>!(BUNDLE.hideLines||[]).includes(l.r));
+MB=(()=>{let a=[Infinity,Infinity,-Infinity,-Infinity];CITY_LINES.forEach(l=>l.pts.forEach(([x,y])=>{a[0]=Math.min(a[0],x);a[1]=Math.min(a[1],y);a[2]=Math.max(a[2],x);a[3]=Math.max(a[3],y);}));PLACES.forEach(p=>{a[0]=Math.min(a[0],p.x);a[1]=Math.min(a[1],p.y);a[2]=Math.max(a[2],p.x);a[3]=Math.max(a[3],p.y);});return [a[0]-.3,a[1]-.3,a[2]+.3,a[3]+.3];})();
+S=520/(MB[2]-MB[0]);
+}
 const P=(x,y)=>[+((x-MB[0])*S).toFixed(1),+((MB[3]-y)*S).toFixed(1)];
 const pts=a=>a.map(o=>P(o.x,o.y).join(',')).join(' ');
 const ptsA=a=>a.map(([x,y])=>P(x,y).join(',')).join(' ');
@@ -706,9 +722,9 @@ function mapHTML(plan){
     const right=x<W-150;
     g+=`<text class="m-label strong" x="${right?x+w/2+5:x-w/2-5}" y="${y+4}" text-anchor="${right?'start':'end'}">${esc(p.n)}</text>`;
   });
-  const legend=ROUTES.map(r=>`<span><span class="route" style="--rc:${r.c}">${r.id}</span>${esc(r.name)}</span>`).join('')+`<span><span class="route route-other">·</span>Other routes, no timetable yet</span>`;
-  return `<div class="map-wrap"><div class="panel-head"><span class="eyebrow">Peterborough Transit routes</span><span class="hint">${plan?'S start · numbers are your stops · E end · dotted lines are walks':'Route lines from the City of Peterborough'}</span></div>
-    <svg class="map-svg" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" role="img" aria-label="Map of Peterborough Transit routes${plan?' with the selected plan highlighted':''}">${g}</svg>
+  const legend=ROUTES.map(r=>`<span><span class="route" style="--rc:${r.c}">${r.id}</span>${esc(r.name)}</span>`).join('')+(CITY_LINES.some(l=>!BUNDLE.routes[l.r])?`<span><span class="route route-other">·</span>Other routes, no timetable yet</span>`:'');
+  return `<div class="map-wrap"><div class="panel-head"><span class="eyebrow">${esc(BUNDLE.mapTitle||BUNDLE.name+' transit routes')}</span><span class="hint">${plan?'S start · numbers are your stops · E end · dotted lines are walks':esc(BUNDLE.mapNote||'Bus route lines')}</span></div>
+    <svg class="map-svg" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" role="img" aria-label="Map of ${esc(BUNDLE.name)} bus routes${plan?' with the selected plan highlighted':''}">${g}</svg>
     <div class="legend">${legend}</div></div>`;
 }
 
@@ -738,5 +754,31 @@ $('#setup').addEventListener('click',e=>{
 });
 $('#main').addEventListener('click',e=>{const b=e.target.closest('[data-opt]');if(!b)return;selected=+b.dataset.opt;renderMain();});
 
-renderSetup();run();
+function renderCityChrome(){
+  $('#cities').innerHTML=CITY_LIST.map(c=>`<button data-city="${c.id}" aria-pressed="${c.id===store.city}">${esc(c.name)}</button>`).join('');
+  $('#city-sub').textContent=`Plan a whole day of stops around the bus · ${BUNDLE.name}, ON`;
+  const pill=$('#city-pill');pill.textContent=BUNDLE.info.pill;pill.hidden=!BUNDLE.info.pill;
+  $('#city-source').textContent=BUNDLE.info.source;
+  document.title='FoxPaths '+BUNDLE.name;
+}
+function loadCityData(c){
+  window.FOXPATH_CITIES=window.FOXPATH_CITIES||{};
+  if(window.FOXPATH_CITIES[c.id])return Promise.resolve();
+  return new Promise((res,rej)=>{const s=document.createElement('script');s.src=c.file;s.onload=()=>window.FOXPATH_CITIES[c.id]?res():rej();s.onerror=rej;document.head.appendChild(s);});
+}
+let openId=null;
+async function openCity(id){
+  openId=id;
+  const c=CITY_LIST.find(x=>x.id===id);
+  $('#cities').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.city===id)));
+  $('#main').innerHTML=`<p class="loading">Loading ${esc(c.name)} bus schedules…</p>`;
+  try{await loadCityData(c);if(openId!==id)return;}
+  catch(e){$('#main').innerHTML=`<div class="notice"><strong>Couldn't load ${esc(c.name)}'s schedules.</strong><span>Check your connection and reload the page.</span></div>`;return;}
+  store.city=id;setCity(id);computeMapGeom();useCityState();save();
+  try{history.replaceState(null,'','#'+id);}catch(e){}
+  renderCityChrome();renderSetup();run();
+}
+$('#cities').addEventListener('click',e=>{const b=e.target.closest('button[data-city]');if(b&&b.dataset.city!==openId)openCity(b.dataset.city);});
+$('#cities').innerHTML=CITY_LIST.map(c=>`<button data-city="${c.id}" aria-pressed="${c.id===store.city}">${esc(c.name)}</button>`).join('');
+openCity(store.city);
 </script>
