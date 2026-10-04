@@ -86,6 +86,21 @@ input:focus,select:focus{border-color:var(--accent)}
 .mins{display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:end}
 details.limits summary{cursor:pointer;font-size:13px;color:var(--muted)}
 details.limits[open] summary{margin-bottom:8px}
+.ac{position:relative}
+.ac>label{font-size:13px;color:var(--muted)}
+.ac-list{position:absolute;z-index:20;left:0;right:0;top:calc(100% - 18px);margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:320px;overflow:auto}
+.ac-list li{display:grid;gap:1px;padding:8px 10px;border-radius:6px;cursor:pointer}
+.ac-list li[aria-selected="true"],.ac-list li[role=option]:hover{background:var(--accent-soft)}
+.ac-t{font-weight:700}
+.ac-s{font-size:12.5px;color:var(--muted)}
+.ac-list li.ac-msg{cursor:default;color:var(--muted);font-size:13px}
+.ac-note{font-size:12px;color:var(--muted)}
+.ac-note.ok{color:var(--accent)}
+.saved{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.saved li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.saved li div{display:grid;min-width:0}
+.saved li span{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hint a{color:var(--accent)}
 .add-btn{border:1px dashed var(--line);background:transparent;padding:10px;border-radius:var(--r);font-weight:700;cursor:pointer;color:var(--accent)}
 .add-btn:hover{border-color:var(--accent)}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:14px;cursor:pointer}
@@ -213,6 +228,19 @@ function setCity(id){
   placeById=Object.fromEntries(PLACES.map(p=>[p.id,p]));
   NET=buildNet('weekday');
 }
+// Places the person found with address search: a moved Home/Work, plus saved places. Positions are lon/lat.
+function setCustomPlaces(c){
+  c=c||{};
+  const toXY=(lon,lat)=>({x:(lon-LON0)*KX,y:(lat-LAT0)*KY});
+  const list=BUNDLE.places.map(p=>({...p,x:p.p[0],y:p.p[1]}));
+  for(const k of ['home','work']){
+    const o=c[k],p=list.find(b=>b.id===k);
+    if(o&&p)Object.assign(p,toXY(o.lon,o.lat),{sub:o.label,q:o.label,custom:true});
+  }
+  (c.saved||[]).forEach(s=>list.push({id:s.id,n:s.n,sub:s.sub,cat:'saved',q:s.q,custom:true,...toXY(s.lon,s.lat)}));
+  PLACES=list;placeById=Object.fromEntries(PLACES.map(p=>[p.id,p]));
+}
+const cityLonLat=(x,y)=>[x/KX+LON0,y/KY+LAT0];
 
 /* ================= NETWORK ================= */
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
@@ -449,7 +477,7 @@ function solve(inp){
 function fmt(m){m=Math.round(m);const d=Math.floor(m/1440);m-=d*1440;let h=Math.floor(m/60),mm=m%60;const ap=h>=12?'pm':'am';h=h%12||12;return `${h}:${String(mm).padStart(2,'0')} ${ap}`+(d?' (+1 day)':'');}
 function fmtDur(m){m=Math.round(m);if(m<60)return m+' min';const h=Math.floor(m/60),r=m%60;return r?`${h} h ${r} min`:`${h} h`;}
 function parseT(s){if(!s)return null;const [h,m]=s.split(':').map(Number);return Number.isFinite(h)?h*60+(m||0):null;}
-if(typeof module!=='undefined')module.exports={solve,fmt,fmtDur,parseT,setCity,getNet:()=>NET,getPlaces:()=>placeById};
+if(typeof module!=='undefined')module.exports={solve,fmt,fmtDur,parseT,setCity,setCustomPlaces,getNet:()=>NET,getPlaces:()=>placeById};
 </script>
 
 <script>
@@ -475,6 +503,8 @@ function useCityState(){
   state=store.cities[store.city]||cityDefaults(BUNDLE);
   const def=cityDefaults(BUNDLE);
   for(const k of Object.keys(def))if(state[k]==null)state[k]=def[k];
+  if(!state.custom)state.custom={saved:[]};
+  setCustomPlaces(state.custom);
   const okPlace=v=>placeById[v]||(v&&v.startsWith('any:')&&CATS[v.slice(4)]);
   if(!Array.isArray(state.acts))state.acts=def.acts;
   state.acts.forEach(a=>{if(!okPlace(a.place))a.place=def.acts[0].place;});
@@ -489,9 +519,19 @@ function save(){store.cities[store.city]=state;try{localStorage.setItem('foxpath
 function placeSelect(id,val,allowAny){
   let h=`<select id="${id}">`;
   if(allowAny){h+=`<optgroup label="Let the app pick">`+Object.entries(CATS).map(([k,v])=>`<option value="any:${k}"${val==='any:'+k?' selected':''}>${v}</option>`).join('')+`</optgroup><optgroup label="Specific place">`;}
-  h+=PLACES.map(p=>`<option value="${p.id}"${val===p.id?' selected':''}>${esc(p.n)}</option>`).join('');
+  const opt=p=>`<option value="${p.id}"${val===p.id?' selected':''}>${esc(p.n)}</option>`;
+  h+=PLACES.filter(p=>p.cat!=='saved').map(opt).join('');
   if(allowAny)h+='</optgroup>';
+  const saved=PLACES.filter(p=>p.cat==='saved');
+  if(saved.length)h+=`<optgroup label="Your saved places">${saved.map(opt).join('')}</optgroup>`;
   return h+'</select>';
+}
+function acField(key,label,value,picked){
+  const note=key==='new'?'':(picked?'On the map at the address you picked':'Pick a suggestion to put this on the planner\'s map');
+  return `<div class="field ac" data-ac="${key}"><label for="addr-${key}">${label}</label>
+    <input type="text" id="addr-${key}" value="${esc(value)}" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ac-list-${key}" placeholder="${key==='new'?'Search an address or business':'Search an address'}">
+    <ul class="ac-list" id="ac-list-${key}" role="listbox" hidden></ul>
+    ${note?`<span class="ac-note${picked?' ok':''}">${note}</span>`:''}</div>`;
 }
 function goalOptions(){
   const o=state.acts.map((a,i)=>[`max:${a.id}`,`Most time at: ${a.label||'Stop '+(i+1)}`]);
@@ -527,9 +567,11 @@ function renderSetup(){
   $('#setup').innerHTML=`
     <div class="block">
       <h2>Your places</h2>
-      <label class="field"><span>Home address</span><input type="text" id="addr-home" value="${esc(s.addr.home)}" autocomplete="street-address"></label>
-      <label class="field"><span>Work address</span><input type="text" id="addr-work" value="${esc(s.addr.work)}"></label>
-      <p class="hint">Used for the Google Maps buttons. Saved only in this browser. Changing an address here doesn't move it on the planner's map yet.</p>
+      ${acField('home','Home',s.addr.home,s.custom.home)}
+      ${acField('work','Work',s.addr.work,s.custom.work)}
+      ${acField('new','Save another place','',null)}
+      ${(s.custom.saved||[]).length?`<ul class="saved">${s.custom.saved.map(p=>`<li><div><strong>${esc(p.n)}</strong><span>${esc(p.sub)}</span></div><button class="icon-btn" data-action="unsave" data-pid="${p.id}" aria-label="Remove ${esc(p.n)}">✕</button></li>`).join('')}</ul>`:''}
+      <p class="hint">Type part of an address or a business name, like "561" or "KFC", and pick a suggestion; the closest come first. Suggestions come from <a href="https://photon.komoot.io" target="_blank" rel="noopener">Photon</a> using <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> data, so what you type is sent to that service. Your places are saved only in this browser.</p>
     </div>
     <div class="block">
       <h2>Start</h2>
@@ -749,9 +791,82 @@ $('#setup').addEventListener('click',e=>{
     case 'up':if(i>0)[state.acts[i-1],state.acts[i]]=[state.acts[i],state.acts[i-1]];break;
     case 'down':if(i<state.acts.length-1)[state.acts[i+1],state.acts[i]]=[state.acts[i],state.acts[i+1]];break;
     case 'find':run();setView('plans');window.scrollTo({top:0,behavior:'smooth'});return;
+    case 'unsave':{const id=b.dataset.pid;state.custom.saved=state.custom.saved.filter(p=>p.id!==id);
+      state.acts.forEach(a=>{if(a.place===id)a.place='home';});['start','end'].forEach(k=>{if(state[k].place===id)state[k].place='home';});
+      setCustomPlaces(state.custom);break;}
   }
   save();renderSetup();
 });
+/* ---------- address search (Photon, OpenStreetMap data) ---------- */
+const AC={timer:null,ctrl:null,results:{},active:{}};
+function acCenter(){const h=placeById.home;return h||{x:0,y:0};}
+function acLabel(pr){
+  const street=[pr.housenumber,pr.street].filter(Boolean).join(' ');
+  const place=pr.city||pr.town||pr.village||pr.locality||pr.district||'';
+  const title=pr.name||street||place;
+  const sub=[pr.name&&street?street:'',place].filter(Boolean).join(', ');
+  return {title,sub,q:[title,sub].filter(Boolean).join(', ')+(pr.state==='Ontario'?', ON':'')};
+}
+async function acSearch(key,q){
+  const list=$('#ac-list-'+key);if(!list)return;
+  const c=acCenter(),[clon,clat]=cityLonLat(c.x,c.y);
+  const local=PLACES.filter(p=>p.cat!=='saved'&&p.id!==key&&(p.n+' '+(p.sub||'')).toLowerCase().includes(q.toLowerCase()))
+    .map(p=>({title:p.n,sub:p.sub||'',x:p.x,y:p.y,local:true,q:p.q||p.n}));
+  acShow(key,local,'Searching…');
+  if(AC.ctrl)AC.ctrl.abort();AC.ctrl=new AbortController();
+  try{
+    const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=12&lang=en&lat=${clat.toFixed(5)}&lon=${clon.toFixed(5)}`,{signal:AC.ctrl.signal});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const js=await r.json();
+    const found=(js.features||[]).map(f=>{const [lon,lat]=f.geometry.coordinates;const L=acLabel(f.properties||{});
+      return {...L,lon,lat,x:(lon-LON0)*KX,y:(lat-LAT0)*KY};});
+    const near=found.filter(f=>Math.hypot(f.x,f.y)<30); // stay within about 30 km of the city
+    acShow(key,[...local,...near],near.length||local.length?'':'No matches nearby. Try adding a street name.');
+  }catch(e){
+    if(e.name==='AbortError')return;
+    acShow(key,local,"Address search isn't reachable right now. You can still pick from the city's places.");
+  }
+}
+function acShow(key,items,msg){
+  const list=$('#ac-list-'+key),input=$('#addr-'+key);if(!list)return;
+  const c=acCenter();
+  items.forEach(i=>i.d=Math.hypot(i.x-c.x,i.y-c.y));
+  items.sort((a,b)=>(!!b.local-!!a.local)||a.d-b.d);
+  AC.results[key]=items;AC.active[key]=-1;
+  list.innerHTML=items.map((it,i)=>`<li role="option" id="ac-${key}-${i}" data-ac-pick="${key}" data-i="${i}"><span class="ac-t">${esc(it.title)}</span><span class="ac-s">${esc([it.sub,it.d<0.05?'':(it.d<1?Math.round(it.d*1000)+' m':it.d.toFixed(1)+' km')+' away'].filter(Boolean).join(' · '))}</span></li>`).join('')
+    +(msg?`<li class="ac-msg" aria-disabled="true">${esc(msg)}</li>`:'');
+  const open=!!(items.length||msg);list.hidden=!open;input.setAttribute('aria-expanded',String(open));
+}
+function acClose(key){const l=$('#ac-list-'+key);if(l)l.hidden=true;const i=$('#addr-'+key);if(i)i.setAttribute('aria-expanded','false');}
+function acPick(key,i){
+  const it=(AC.results[key]||[])[i];if(!it)return;
+  const [lon,lat]=it.lon!=null?[it.lon,it.lat]:cityLonLat(it.x,it.y);
+  if(key==='home'||key==='work'){state.custom[key]={lon,lat,label:it.q};state.addr[key]=it.q;}
+  else{const id='u'+Date.now().toString(36);state.custom.saved=[...(state.custom.saved||[]),{id,n:it.title,sub:it.sub||it.q,q:it.q,lon,lat}];}
+  setCustomPlaces(state.custom);save();renderSetup();run();
+}
+$('#setup').addEventListener('input',e=>{
+  const box=e.target.closest('.ac');if(!box)return;
+  const key=box.dataset.ac,q=e.target.value.trim();
+  if(key!=='new'){state.custom[key]=null;setCustomPlaces(state.custom);const n=box.querySelector('.ac-note');if(n){n.textContent="Pick a suggestion to put this on the planner's map";n.classList.remove('ok');}}
+  clearTimeout(AC.timer);
+  if(q.length<2){acClose(key);return;}
+  AC.timer=setTimeout(()=>acSearch(key,q),300);
+});
+$('#setup').addEventListener('keydown',e=>{
+  const box=e.target.closest('.ac');if(!box)return;
+  const key=box.dataset.ac,items=AC.results[key]||[],list=$('#ac-list-'+key);
+  if(e.key==='Escape'){acClose(key);return;}
+  if(!items.length||list.hidden)return;
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();
+    let a=(AC.active[key]??-1)+(e.key==='ArrowDown'?1:-1);a=(a+items.length)%items.length;AC.active[key]=a;
+    list.querySelectorAll('[role=option]').forEach((li,i)=>li.setAttribute('aria-selected',String(i===a)));
+    e.target.setAttribute('aria-activedescendant','ac-'+key+'-'+a);}
+  else if(e.key==='Enter'){e.preventDefault();acPick(key,Math.max(0,AC.active[key]));}
+});
+$('#setup').addEventListener('mousedown',e=>{const li=e.target.closest('[data-ac-pick]');if(li){e.preventDefault();acPick(li.dataset.acPick,+li.dataset.i);}});
+$('#setup').addEventListener('focusout',e=>{const box=e.target.closest('.ac');if(box)setTimeout(()=>acClose(box.dataset.ac),150);});
+
 $('#main').addEventListener('click',e=>{const b=e.target.closest('[data-opt]');if(!b)return;selected=+b.dataset.opt;renderMain();});
 
 function renderCityChrome(){

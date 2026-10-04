@@ -11,6 +11,8 @@ Newmarket, Ontario.
   at each place
 - **Flexible days**: stops can have their own time limits, and FoxPaths can choose the order of your stops for you
 - **Google Maps hand-off**: each leg of the plan has a button that opens it in Google Maps for turn-by-turn directions
+- **Address search**: type part of an address or a business name and pick from suggestions, closest first. Picked
+  places go on the planner's map and can be used as Home, Work or any stop
 
 The site lives in [`docs/`](docs/) and is served by GitHub Pages.
 
@@ -78,6 +80,9 @@ Walking times use straight-line distance with a detour allowance at about 4.8 km
 before you travel.
 
 ## Your data
+
+Address search sends what you type in the search boxes to [Photon](https://photon.komoot.io), a free search service run
+by Komoot, using © OpenStreetMap contributors data. Nothing else leaves your browser.
 
 Your day, addresses and settings save automatically in your browser (localStorage), on that device only. Nothing is
 sent anywhere. Addresses are used only to build Google Maps links.
