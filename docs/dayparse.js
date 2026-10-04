@@ -171,12 +171,15 @@
     places.forEach(p => { p._d = home ? Math.hypot(p.x - home.x, p.y - home.y) : 0; });
     const cats = ctx.cats || {};
     const now = ctx.now || new Date();
-    const out = { start: null, end: null, day: null, reorder: null, goalLabel: null, acts: [], ignored: [] };
+    const out = { start: null, end: null, day: null, reorder: null, goalLabel: null, leaveNow: false, acts: [], ignored: [] };
 
     let s = ' ' + String(text || '').toLowerCase().replace(/[–—]/g, '-').replace(/\s+/g, ' ') + ' ';
     // whole-sentence options
     if (/\b(?:any order|in any order|order doesn'?t matter|flexible order|whatever order)\b/.test(s)) {
       out.reorder = true; s = s.replace(/\b(?:in )?any order\b|\border doesn'?t matter\b|\bflexible order\b|\bwhatever order\b/g, ' ');
+    }
+    if (/\b(?:right now|now|whenever|no rush|don'?t care when|any ?time|asap)\b/.test(s)) {
+      out.leaveNow = true; s = s.replace(/\b(?:right now|now|whenever|no rush|i don'?t care when(?: i leave)?|don'?t care when(?: i leave)?|any ?time|asap)\b/g, ' ');
     }
     let m;
     if ((m = s.match(/\b(today|tonight|tomorrow|(?:this |next )?(sun|mon|tue|wed|thu|fri|sat)[a-z]*)\b/))) {
@@ -194,7 +197,8 @@
 
     for (const raw of clauses) {
       let c = ' ' + raw + ' ';
-      const startWords = /\b(?:leave|leaving|start|starting|depart|departing|head out|set off|wake up)\b/.test(c) || /^\s*from\b/.test(c);
+      const startWords = /\b(?:leave|leaving|start|starting|depart|departing|head out|set off|wake up)\b/.test(c) || /^\s*from\b/.test(c) ||
+        /^\s*(?:i'?m|i am|currently|we'?re)\s+(?:at|in)\b/.test(c);
       const isEnd = !startWords && (/^\s*(?:go |get |be |head |come )?(?:back )?(?:home|back)\b/.test(c) ||
         /\b(?:end|finish|ending|finishing|done)\b/.test(c) || /\b(?:home|back) (?:by|before|around|between|at|for)\b/.test(c));
       const isStart = !isEnd && startWords;
@@ -213,7 +217,7 @@
 
       if (role === 'start' || role === 'end') {
         let placeText = '';
-        const pm = c.match(/\b(?:from|at|leave|leaving|start(?:ing)?(?: from| at)?|depart(?:ing)?(?: from)?|end(?:ing)?(?: at)?|finish(?:ing)?(?: at)?|back (?:at|to)|get (?:back )?to|go (?:back )?to)\s+(.+)$/);
+        const pm = c.match(/\b(?:i'?m at|i am at|currently at|i'?m in|from|at|leave|leaving|start(?:ing)?(?: from| at)?|depart(?:ing)?(?: from)?|end(?:ing)?(?: at)?|finish(?:ing)?(?: at)?|back (?:at|to)|get (?:back )?to|go (?:back )?to)\s+(.+)$/);
         if (pm) placeText = pm[1];
         else if (/\bhome\b/.test(c) || /\bback\b/.test(c)) placeText = 'home';
         placeText = placeText.replace(/\b(?:by|before|around|between|at)\b.*$/, '').trim();
@@ -222,6 +226,7 @@
         if (mp && mp.place) w.place = mp.place.id;
         else if (!placeText) w.place = 'home';
         else if (placeText && placeText !== 'home') w.placeText = placeText;
+        if (!t && role === 'end') w.flex = true; // "then home" with no time: no set arrival
         if (t) {
           if (role === 'start') {
             const [a, b] = t.kind === 'range' ? [t.a, t.b] : t.kind === 'by' ? [t.a - 60, t.a] : t.kind === 'after' ? [t.a, t.a + 60] : t.kind === 'around' ? [t.a - 15, t.a + 15] : [t.a, t.a + 15];
@@ -242,19 +247,23 @@
         else if (t.kind === 'by') act.by = hhmm(t.a);
         else act.after = hhmm(Math.max(0, t.kind === 'around' ? t.a - 15 : t.a));
       }
+      const onWay = /\b(?:on|along) (?:the|my) way\b|\bon the go\b|\balong the route\b/.test(c);
+      if (onWay) c = c.replace(/\b(?:on|along) (?:the|my) way\b|\bon the go\b|\balong the route\b/g, ' ').replace(/\s+/g, ' ').trim();
       let what = c, where = '';
       const pm = c.match(/^(.*?)\b(?:at|on|in|near|to|@)\s+(.+)$/);
       if (pm) { what = pm[1].trim(); where = pm[2].trim(); }
       what = what.replace(/^(?:go|going|head|then|i want to|want to|i'd like to|i need to|need to|have|grab|get|do some|do)\s+/, '').trim();
+      what = what.replace(/\s+(?:something|some food|a bite|food)$/, '').trim();
+      if (/^(?:something|food|a bite|bite)$/.test(what)) what = 'eat';
       // "kfc 30m" with no preposition: try the whole thing as a place
       if (!where) {
         const mp = matchPlace(what, places);
-        if (mp && mp.score >= 0.99) { where = what; what = ''; }
+        if (mp && mp.score >= 0.99 && !categoryOf(what)) { where = what; what = ''; }
         else if (!categoryOf(what)) { where = what; }
       }
       const cleanWhere = where.replace(/^(?:the|a|an|some)\s+/, '').trim();
       const cat = categoryOf(cleanWhere) || (!cleanWhere ? categoryOf(what) : null);
-      const anyWord = /^(?:a|an|any|some|somewhere|a nearby|nearby)\b/.test(where) || !cleanWhere;
+      const anyWord = onWay || /^(?:a|an|any|some|somewhere|a nearby|nearby)\b/.test(where) || !cleanWhere;
       let mp = cleanWhere ? matchPlace(cleanWhere, places.filter(p => p.cat !== 'home' || /home/.test(cleanWhere))) : null;
       if (mp && mp.score < 0.7 && cat && anyWord) mp = null;
       if (mp) act.place = mp.place.id;

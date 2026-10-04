@@ -17,6 +17,11 @@ Newmarket and Waterloo, Ontario.
 - **Search inside every stop**: each stop's "Where" box searches the city's places, your saved places and addresses
 - **Quick durations**: tap 30-45m, 1h, 3h+ and so on, or type them
 - **Live plans**: plans update as you change anything; on phones a bar at the bottom shows the best plan
+- **Leave when it's best**: tap "Leave now" and tick "No set arrival time", or type something like "I'm at UW now, eat
+  on the way, then home". FoxPaths picks the times that waste the least time waiting at stops or sitting idle, and
+  tells you how much longer you can stay where you are ("you have 18 min more at the library")
+- **A place to eat on your way**: FoxPaths loads restaurants, cafés and fast food from OpenStreetMap (through the
+  Overpass API, cached for a week in your browser) and picks the one with the smallest detour that fits your buses
 - **Which side of the street**: for every bus, which way it's heading, which side of the street to wait on (buses
   drive on the right, so the stop is on the right-hand side of travel), and a Street View link to the stop. For the
   ION light rail it names the platform direction instead
@@ -108,7 +113,8 @@ before you travel.
 
 ## Your data
 
-Address search sends what you type in the search boxes to [Photon](https://photon.komoot.io), a free search service run
+Restaurant suggestions are loaded once per city from the [Overpass API](https://overpass-api.de) (OpenStreetMap
+data); the request contains only the city's map area. Address search sends what you type in the search boxes to [Photon](https://photon.komoot.io), a free search service run
 by Komoot, using © OpenStreetMap contributors data. Nothing else leaves your browser.
 
 Your day, addresses and settings save automatically in your browser (localStorage), on that device only. Nothing is

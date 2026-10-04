@@ -242,6 +242,7 @@ details.more[open]>summary h2::after{content:" −"}
   <footer class="foot">
     <p id="city-source"></p>
     <p>Walking times are straight-line distance with a detour allowance at about 4.8 km/h, so real walks may differ. Always check the official schedule before you travel.</p>
+    <p>Restaurants and cafés for "a place to eat on your way" come from OpenStreetMap (© OpenStreetMap contributors), loaded through the Overpass API.</p>
     <p>Google Maps buttons open one leg at a time, because Google Maps doesn't support multi-stop trips by transit. Google shows its own live bus options, which may differ from this plan.</p>
   </footer>
 </div>
@@ -256,6 +257,7 @@ const CITY_LIST=[
   {id:'waterloo',name:'Waterloo',file:'data/waterloo.js'},
 ];
 let BUNDLE,LON0,LAT0,KX,KY,PLACES,CATS,ROUTES,TIMED_IDS,placeById,NET;
+const EXTRA={}; // per city: restaurants and cafés loaded from OpenStreetMap
 function setCity(id){
   BUNDLE=window.FOXPATH_CITIES[id];
   [LON0,LAT0]=BUNDLE.origin;[KX,KY]=BUNDLE.k;
@@ -276,6 +278,9 @@ function setCustomPlaces(c){
     if(o&&p)Object.assign(p,toXY(o.lon,o.lat),{sub:o.label,q:o.label,custom:true});
   }
   (c.saved||[]).forEach(s=>list.push({id:s.id,n:s.n,sub:s.sub,cat:'saved',q:s.q,custom:true,...toXY(s.lon,s.lat)}));
+  const extra=EXTRA[BUNDLE.id]||[];
+  extra.forEach(p=>{if(!list.some(q=>q.id===p.id))list.push(p);});
+  CATS={...(BUNDLE.cats||{}),...(extra.length?{food:'A place to eat on your way'}:{})};
   PLACES=list;placeById=Object.fromEntries(PLACES.map(p=>[p.id,p]));
 }
 const cityLonLat=(x,y)=>[x/KX+LON0,y/KY+LAT0];
@@ -404,7 +409,17 @@ function permutations(a){if(a.length<=1)return [a.slice()];const out=[];a.forEac
 function searchDays(inp,R,endFrom,endTo){
   const acts=inp.acts,n=acts.length;
   const START=placeById[inp.start.place],END=placeById[inp.end.place];
-  const cand=acts.map(a=>a.place.startsWith('any:')?PLACES.filter(p=>p.cat===a.place.slice(4)):[placeById[a.place]]);
+  const fixedAt=j=>{const a=acts[j];return a&&!a.place.startsWith('any:')?placeById[a.place]:null;};
+  const cand=acts.map((a,k)=>{
+    if(!a.place.startsWith('any:'))return [placeById[a.place]];
+    const list=PLACES.filter(p=>p.cat===a.place.slice(4)&&R.near(p).length);
+    if(list.length<=8)return list;
+    // many choices (like every restaurant in town): keep the 8 with the smallest detour between
+    // where you're coming from and where you're going next
+    const A=(!inp.reorder&&k>0&&fixedAt(k-1))||START,B=(!inp.reorder&&k<n-1&&fixedAt(k+1))||END;
+    const d=(p,q)=>Math.hypot(p.x-q.x,p.y-q.y);
+    return list.map(p=>({p,c:d(A,p)+d(p,B)-d(A,B)})).sort((x,y)=>x.c-y.c).slice(0,8).map(x=>x.p);
+  });
   const orders=(inp.reorder&&n>1&&n<=5)?permutations([...Array(n).keys()]):[[...Array(n).keys()]];
   const leaves=[];let truncated=false;
   for(const order of orders){
@@ -449,12 +464,14 @@ function searchDays(inp,R,endFrom,endTo){
 }
 
 const METRIC={
-  wait:p=>[p.wait,p.walk,p.spare,-p.start],
+  wait:p=>[p.wait,p.walk,p.spare,p.end],
   walk:p=>[p.walk,p.wait,p.spare],
   late:p=>[-p.start,p.wait,p.walk],
   early:p=>[p.end,p.wait,p.walk],
+  // time spent waiting at stops or idle after you're done somewhere, with a light push toward getting there sooner
+  smooth:p=>[Math.round(p.wait+p.spare+0.25*p.end),p.walk,p.end],
 };
-const TAGS={wait:'Least waiting',walk:'Least walking',late:'Leaves latest',early:'Home earliest'};
+const TAGS={smooth:'Least time wasted',wait:'Least waiting',walk:'Least walking',late:'Leaves latest',early:'Home earliest'};
 function goalKey(goal){
   if(goal.startsWith('max:')){const id=goal.slice(4);return p=>[-(p.durs[id]??0),p.wait,p.walk,p.spare];}
   return METRIC[goal]||METRIC.wait;
@@ -475,7 +492,9 @@ function pickOptions(leaves,inp){
   let goalTag=TAGS[inp.goal];
   if(inp.goal.startsWith('max:')){const a=inp.acts.find(a=>a.id===inp.goal.slice(4));goalTag='Most '+(a?.label||'stop').toLowerCase()+' time';}
   const picks=[{p:sorted[0],tag:goalTag}];
-  const ok=c=>c&&picks.every(q=>meaningful(c,q.p));
+  const best=sorted[0];
+  // an alternative is only worth showing if it doesn't waste much more time than the best plan
+  const ok=c=>c&&c.spare<=best.spare+30&&c.wait<=best.wait+20&&picks.every(q=>meaningful(c,q.p));
   const alts=Object.keys(TAGS).filter(m=>m!==inp.goal).map(m=>[m,TAGS[m]]);
   if(inp.reorder&&inp.acts.length>1)alts.unshift(['order','Different order']);
   for(const [m,tag] of alts){
@@ -583,7 +602,7 @@ function durNote(a){
 }
 function goalOptions(){
   const o=state.acts.map((a,i)=>[`max:${a.id}`,`Most time at: ${a.label||'Stop '+(i+1)}`]);
-  o.push(['wait','Least waiting at stops'],['walk','Least walking'],['late','Leave as late as possible'],['early','Get back as early as possible']);
+  o.push(['smooth','Least time wasted (waiting or idle)'],['wait','Least waiting at stops'],['walk','Least walking'],['late','Leave as late as possible'],['early','Get back as early as possible']);
   if(!o.some(x=>x[0]===state.goal))state.goal=o[0][0];
   return o.map(([v,l])=>`<option value="${v}"${v===state.goal?' selected':''}>${esc(l)}</option>`).join('');
 }
@@ -630,6 +649,7 @@ function renderSetup(){
       <h2>Start</h2>
       <label class="field"><span>Day</span><select id="day">${[['weekday','Weekday (Mon to Fri)'],['saturday','Saturday'],['sunday','Sunday or holiday']].map(([v,l])=>`<option value="${v}"${s.day===v?' selected':''}>${l}</option>`).join('')}</select></label>
       ${pickField('start',s.start.place,'From',false)}
+      <button type="button" class="chip now" data-action="now">Leave now</button>
       <div class="row3">
         <label class="field"><span>Leave between</span><input type="time" step="300" id="start-from" value="${esc(s.start.from)}"></label>
         <span class="to">and</span>
@@ -645,7 +665,8 @@ function renderSetup(){
     <div class="block">
       <h2>End</h2>
       ${pickField('end',s.end.place,'Finish at',false)}
-      <div class="row3">
+      <label class="check"><input type="checkbox" id="endflex" ${s.end.flex?'checked':''}><span>No set arrival time<br><span class="hint">FoxPaths picks the times that waste the least time waiting.</span></span></label>
+      <div class="row3"${s.end.flex?' hidden':''}>
         <label class="field"><span>Arrive between</span><input type="time" step="300" id="end-from" value="${esc(s.end.from)}"></label>
         <span class="to">and</span>
         <label class="field"><span>&nbsp;</span><input type="time" step="300" id="end-to" value="${esc(s.end.to)}" aria-label="Arrive by"></label>
@@ -673,7 +694,7 @@ function readSetup(){
   const v=id=>document.getElementById(id)?.value??'';
   const num=(id,d)=>{const x=parseFloat(v(id));return Number.isFinite(x)?x:d;};
   state.start={...state.start,from:v('start-from'),to:v('start-to')};
-  state.end={...state.end,from:v('end-from'),to:v('end-to')};
+  state.end={...state.end,from:v('end-from'),to:v('end-to'),flex:!!document.getElementById('endflex')?.checked};
   state.acts=state.acts.map(a=>{
     const d=DayParse.parseDur(v(`act-${a.id}-dur`));
     const label=v(`act-${a.id}-label`);
@@ -692,11 +713,17 @@ function toInput(){
   const T=s=>parseT(s);
   return {
     start:{place:state.start.place,from:T(state.start.from)??600,to:T(state.start.to)??(T(state.start.from)??600)},
-    end:{place:state.end.place,from:T(state.end.from)??0,to:T(state.end.to)??1439},
+    end:state.end.flex?{place:state.end.place,from:0,to:1440+180}:{place:state.end.place,from:T(state.end.from)??0,to:T(state.end.to)??1439},
     acts:state.acts.map((a,i)=>{const mn=Math.max(0,parseFloat(a.min)||0);let mx=parseFloat(a.max);mx=Number.isFinite(mx)&&mx>=mn?mx:null;
       return {id:a.id,label:a.label||'Stop '+(i+1),place:a.place,min:mn,max:mx,after:T(a.after),by:T(a.by)};}),
     day:state.day,reorder:state.reorder,maxWalk:Math.max(1,state.maxWalk),buffer:Math.max(0,state.buffer),walkDirect:Math.max(0,state.walkDirect),goal:state.goal
   };
+}
+function leaveNow(){
+  const d=new Date(),m=Math.floor((d.getHours()*60+d.getMinutes())/5)*5;
+  const hm=x=>`${String(Math.floor(x/60)%24).padStart(2,'0')}:${String(x%60).padStart(2,'0')}`;
+  const day=['sunday','weekday','weekday','weekday','weekday','weekday','saturday'][d.getDay()];
+  state.start.from=hm(m);state.start.to=hm(Math.min(m+90,23*60+55));state.day=day;
 }
 let planTimer=null;
 function schedulePlan(delay){clearTimeout(planTimer);planTimer=setTimeout(run,delay??450);}
@@ -750,7 +777,9 @@ function planRows(plan,inp){
   const rows=[];const n=plan.legs.length-1;
   const startP=placeById[inp.start.place],endP=plan.legs[n].to;
   const legLink=k=>{const leg=plan.legs[k];const from=k===0?startP:plan.legs[k-1].to;return gmLink(from,leg.to,leg.op.isWalk||leg.op.rides===0);};
-  rows.push({k:'start',t:plan.start,main:`Leave ${esc(startP.n)}`,link:legLink(0)});
+  const extra=plan.start-inp.start.from;
+  rows.push({k:'start',t:plan.start,main:`Leave ${esc(startP.n)}`,link:legLink(0),
+    sub:extra>=3?`You have ${fmtDur(extra)} more at ${esc(startP.n)}: leaving at ${fmt(plan.start)} instead of ${fmt(inp.start.from)} avoids waiting later on.`:''});
   plan.legs.forEach((leg,k)=>{
     for(const st of leg.op.steps){
       if(st.k==='walk'&&st.w>0)rows.push({k:'walk',t:st.t0,main:`Walk ${st.w} min to ${esc(nm(st.to))}`});
@@ -787,6 +816,7 @@ function optionCard(pick,i,inp){
   return `<button class="opt" data-opt="${i}" aria-pressed="${i===selected}">
     <span class="tag">${esc(pick.tag)}</span>
     <span class="span">${fmt(p.start)} → ${fmt(p.end)}</span>
+    ${p.start-inp.start.from>=3?`<span class="picked">Stay ${fmtDur(p.start-inp.start.from)} more before you leave</span>`:''}
     <dl>${actRows}<dt>Waiting</dt><dd>${fmtDur(p.wait)}</dd><dt>Walking</dt><dd>${fmtDur(p.walk)}</dd><dt>Bus changes</dt><dd>${p.transfers}</dd></dl>
     ${order}${picked.length?`<div class="picked">App picked: ${picked.join(', ')}</div>`:''}
   </button>`;
@@ -850,6 +880,7 @@ function mapHTML(plan){
     plan.legs.forEach((l,k)=>{const lab=k<plan.legs.length-1?String(k+1):'E';const arr=pins.get(l.to.id)||[];arr.push(lab);pins.set(l.to.id,arr);});
   }
   PLACES.forEach(p=>{
+    if(p.osm)return;
     const [x,y]=P(p.x,p.y);
     if(pins.has(p.id))return;
     g+=`<rect class="m-place" x="${x-3.5}" y="${y-3.5}" width="7" height="7" transform="rotate(45 ${x} ${y})"><title>${esc(p.n)}</title></rect>`;
@@ -897,7 +928,9 @@ $('#setup').addEventListener('input',e=>{
 });
 $('#setup').addEventListener('change',e=>{
   if(e.target.closest('.ac')||e.target.id==='quick')return;
-  readSetup();if(e.target.id==='reorder')renderSetup();
+  readSetup();
+  if(e.target.id==='endflex'&&state.end.flex){state.goal='smooth';}
+  if(e.target.id==='reorder'||e.target.id==='endflex'){save();renderSetup();}
   schedulePlan(150);
 });
 $('#setup').addEventListener('click',e=>{
@@ -912,6 +945,7 @@ $('#setup').addEventListener('click',e=>{
     case 'down':if(i<state.acts.length-1)[state.acts[i+1],state.acts[i]]=[state.acts[i],state.acts[i+1]];break;
     case 'dur':{const d=DayParse.parseDur(b.dataset.v);if(d&&i>=0){state.acts[i].min=d.min;state.acts[i].max=d.max==null?'':d.max;}break;}
     case 'parse':applyQuick();return;
+    case 'now':leaveNow();state.goal='smooth';break;
     case 'unsave':{const id=b.dataset.pid;state.custom.saved=state.custom.saved.filter(p=>p.id!==id);
       state.acts.forEach(a=>{if(a.place===id)a.place='';});['start','end'].forEach(k=>{if(state[k].place===id)state[k].place='home';});
       setCustomPlaces(state.custom);break;}
@@ -927,13 +961,13 @@ function quickOutHTML(){
   const chip=(t,cls)=>`<span class="qchip${cls?' '+cls:''}">${t}</span>`;
   const parts=[];
   const fmtT=s=>s?fmt(parseT(s)):'';
-  if(quickInfo.start)parts.push(chip(`Leave ${esc(placeName(state.start.place))} ${fmtT(state.start.from)}–${fmtT(state.start.to)}`));
+  if(quickInfo.start)parts.push(chip(`Leave ${esc(placeName(state.start.place))} ${quickInfo.now?'any time from now':fmtT(state.start.from)+'–'+fmtT(state.start.to)}`));
   state.acts.forEach((a,i)=>{
     const where=a.place?placeName(a.place):'no place yet';
     const lim=[a.after?'after '+fmtT(a.after):'',a.by?'done by '+fmtT(a.by):''].filter(Boolean).join(', ');
     parts.push(chip(`${i+1}. ${esc(a.label||'Stop')} · ${esc(where)} · ${esc(durNote(a).replace(/^About /,''))}${lim?' · '+esc(lim):''}`,a.place?'':'warn'));
   });
-  if(quickInfo.end)parts.push(chip(`${esc(placeName(state.end.place))} ${fmtT(state.end.from)}–${fmtT(state.end.to)}`));
+  if(quickInfo.end)parts.push(chip(state.end.flex?`${esc(placeName(state.end.place))} · no set time, least waiting`:`${esc(placeName(state.end.place))} ${fmtT(state.end.from)}–${fmtT(state.end.to)}`));
   const notes=[...quickInfo.notes];
   return `<div class="qout" role="status"><span class="eyebrow">Here's what I understood</span><div class="qchips">${parts.join('')}</div>${notes.length?`<ul class="qnotes">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}<p class="hint">Not quite right? Edit the sentence and press the button again, or change anything below.</p></div>`;
 }
@@ -959,7 +993,8 @@ async function applyQuick(){
   if(r.day)state.day=r.day;
   if(r.reorder!=null)state.reorder=r.reorder;
   if(r.start){if(r.start.place)state.start.place=r.start.place;if(r.start.from){state.start.from=r.start.from;state.start.to=r.start.to;}}
-  if(r.end){if(r.end.place)state.end.place=r.end.place;if(r.end.from){state.end.from=r.end.from;state.end.to=r.end.to;}}
+  if(r.leaveNow){leaveNow();if(!r.start||!r.start.place)state.start.place=state.start.place||'home';}
+  if(r.end){if(r.end.place)state.end.place=r.end.place;if(r.end.from){state.end.from=r.end.from;state.end.to=r.end.to;}state.end.flex=!!r.end.flex;}
   if(r.acts.length){
     state.acts=r.acts.map(a=>({id:'a'+(++nextId),label:a.label,place:a.place||'',placeText:a.placeText,min:a.min??30,max:a.min==null?60:(a.max==null?'':a.max),after:a.after||'',by:a.by||'',auto:!a.label}));
     r.acts.forEach(a=>{if(a.min==null)notes.push(`No time given for "${a.label||a.placeText}", so I used 30m to 1h.`);});
@@ -968,8 +1003,8 @@ async function applyQuick(){
   // goal: the stop named in "most time at …", or the open-ended stop (like "3h+")
   const g=r.goalLabel&&state.acts.find(a=>a.label.toLowerCase().startsWith(r.goalLabel));
   const open=state.acts.filter(a=>a.max==='').sort((x,y)=>(+y.min||0)-(+x.min||0))[0];
-  if(g)state.goal='max:'+g.id;else if(open)state.goal='max:'+open.id;else if(state.acts.length)state.goal='wait';
-  quickInfo={start:!!r.start,end:!!r.end,notes};
+  if(g)state.goal='max:'+g.id;else if(r.leaveNow||state.end.flex)state.goal='smooth';else if(open)state.goal='max:'+open.id;else if(state.acts.length)state.goal='smooth';
+  quickInfo={start:!!r.start||r.leaveNow,now:r.leaveNow,end:!!r.end,notes};
   save();renderSetup();schedulePlan(50);
   // look up places the city list doesn't have, like "tim hortons on king"
   const look=state.acts.filter(a=>!a.place&&a.placeText);
@@ -1003,7 +1038,9 @@ function acLocal(key,q){
   const ql=q.toLowerCase(),hit=t=>!ql||t.toLowerCase().includes(ql);
   const out=[];
   if(pick&&any)Object.entries(CATS).forEach(([k,v])=>{if(hit(v+' any '+k))out.push({kind:'cat',value:'any:'+k,title:v,sub:'FoxPaths picks the one that fits your day best',local:true,first:true});});
-  PLACES.forEach(p=>{
+  const c0=acCenter();
+  const eats=ql?PLACES.filter(p=>p.osm&&hit(p.n+' '+(p.sub||''))).sort((a,b)=>Math.hypot(a.x-c0.x,a.y-c0.y)-Math.hypot(b.x-c0.x,b.y-c0.y)).slice(0,8):[];
+  [...PLACES.filter(p=>!p.osm),...eats].forEach(p=>{
     if(!pick&&(p.cat==='saved'||p.id===key))return;
     if(hit(p.n+' '+(p.sub||'')+' '+p.id))out.push({kind:'place',id:p.id,title:p.n,sub:p.cat==='saved'?'Saved place · '+(p.sub||''):(p.sub||''),x:p.x,y:p.y,local:true,q:p.q||p.n});
   });
@@ -1089,6 +1126,41 @@ $('#setup').addEventListener('keydown',e=>{
 $('#setup').addEventListener('mousedown',e=>{const li=e.target.closest('[data-ac-pick]');if(li){e.preventDefault();acPick(li.dataset.acPick,+li.dataset.i);}});
 $('#setup').addEventListener('focusout',e=>{const box=e.target.closest('.ac');if(box)setTimeout(()=>{if(!box.contains(document.activeElement))acClose(box.dataset.ac);},150);});
 
+/* ---------- restaurants and cafés from OpenStreetMap (Overpass API) ---------- */
+const EAT_KIND={restaurant:'Restaurant',fast_food:'Fast food',cafe:'Café',food_court:'Food court'};
+async function loadEats(cityId){
+  if(EXTRA[cityId])return true;
+  const key='foxpaths-eats-'+cityId;
+  try{const c=JSON.parse(localStorage.getItem(key));if(c&&Date.now()-c.t<7*864e5&&Array.isArray(c.list)){EXTRA[cityId]=c.list;return true;}}catch(e){}
+  let w=Infinity,s=Infinity,e=-Infinity,n=-Infinity;
+  NET.stops.forEach(st=>{const [lon,lat]=cityLonLat(st.x,st.y);w=Math.min(w,lon);e=Math.max(e,lon);s=Math.min(s,lat);n=Math.max(n,lat);});
+  const q=`[out:json][timeout:25];nwr["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]["name"](${s.toFixed(4)},${w.toFixed(4)},${n.toFixed(4)},${e.toFixed(4)});out center tags;`;
+  try{
+    const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const js=await r.json();
+    const list=(js.elements||[]).map(el=>{
+      const lat=el.lat??el.center?.lat,lon=el.lon??el.center?.lon,t=el.tags||{};
+      if(lat==null||!t.name)return null;
+      const addr=[t['addr:housenumber'],t['addr:street']].filter(Boolean).join(' ');
+      const kind=EAT_KIND[t.amenity]+(t.cuisine&&t.amenity==='restaurant'?' ('+t.cuisine.split(';')[0].replace(/_/g,' ')+')':'');
+      return {id:'o'+el.type[0]+el.id,n:t.name,sub:[kind,addr].filter(Boolean).join(' · '),cat:'food',osm:true,
+        q:[t.name,addr,t['addr:city']||BUNDLE.name].filter(Boolean).join(', ')+', ON',x:(lon-LON0)*KX,y:(lat-LAT0)*KY};
+    }).filter(Boolean);
+    EXTRA[cityId]=list;
+    try{localStorage.setItem(key,JSON.stringify({t:Date.now(),list}));}catch(e){}
+    return true;
+  }catch(e){return false;}
+}
+async function startEats(cityId){
+  const ok=await loadEats(cityId);
+  if(!ok||openId!==cityId||BUNDLE.id!==cityId)return;
+  setCustomPlaces(state.custom);
+  const focused=document.activeElement&&$('#setup').contains(document.activeElement);
+  if(!focused)renderSetup();
+  if(state.acts.some(a=>a.place==='any:food'))schedulePlan(50);
+}
+
 /* ---------- phone summary bar ---------- */
 function updateBar(){
   const bar=$('#mbar');if(!bar)return;
@@ -1124,6 +1196,7 @@ async function openCity(id){
   store.city=id;setCity(id);computeMapGeom();useCityState();save();quickInfo=null;
   try{history.replaceState(null,'','#'+id);}catch(e){}
   renderCityChrome();renderSetup();run();
+  startEats(id);
 }
 $('#mbar').addEventListener('click',e=>{if(e.target.closest('[data-bar]')){setView('plans');window.scrollTo({top:0,behavior:'smooth'});}});
 $('#cities').addEventListener('click',e=>{const b=e.target.closest('button[data-city]');if(b&&b.dataset.city!==openId)openCity(b.dataset.city);});
