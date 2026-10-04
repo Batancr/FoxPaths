@@ -1,0 +1,742 @@
+<title>FoxPath Peterborough</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: two-pane planner. Setup rail on the left, plan options + timeline + schematic map on the right. Phones get two tabs. */
+:root{
+  --bg:#EDF1EE; --surface:#FFFFFF; --surface-2:#E3E9E5; --ink:#16201B; --muted:#55645D; --line:#C9D3CE;
+  --accent:#0A6B4D; --accent-ink:#FFFFFF; --accent-soft:#D6ECE2;
+  --signal:#9A5F00; --signal-soft:#FBEACB; --danger:#A8251C; --danger-soft:#F8DEDB;
+  --land:#E5EBE7; --water:#B7D4E3; --stop:#FFFFFF;
+  --f-display:"Big Shoulders Display","Big Shoulders","Arial Narrow",Impact,sans-serif;
+  --f-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1513; --surface:#18201C; --surface-2:#212B26; --ink:#E3EBE6; --muted:#97A79F; --line:#2F3B35;
+    --accent:#45C496; --accent-ink:#06140E; --accent-soft:#173328;
+    --signal:#F0B54A; --signal-soft:#3A2D12; --danger:#F2867D; --danger-soft:#3B1C19;
+    --land:#151D19; --water:#1C3443; --stop:#0F1513; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1513; --surface:#18201C; --surface-2:#212B26; --ink:#E3EBE6; --muted:#97A79F; --line:#2F3B35;
+  --accent:#45C496; --accent-ink:#06140E; --accent-soft:#173328;
+  --signal:#F0B54A; --signal-soft:#3A2D12; --danger:#F2867D; --danger-soft:#3B1C19;
+  --land:#151D19; --water:#1C3443; --stop:#0F1513; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
+.app{max-width:1340px;margin:0 auto;padding-inline:16px;padding-block:14px 48px}
+h1,h2,h3{margin:0;text-wrap:balance}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* header */
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px 16px;padding-block:4px 14px;border-bottom:2px solid var(--ink);margin-bottom:16px}
+.brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.brand h1{font-family:var(--f-display);font-weight:800;font-size:44px;line-height:.9;letter-spacing:.01em;text-transform:uppercase}
+.brand p{margin:0;color:var(--muted);font-size:14px}
+.demo-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:var(--signal-soft);color:var(--signal);font-size:13px;font-weight:700}
+.demo-pill::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--signal)}
+
+.tabs{display:none}
+.layout{display:grid;gap:20px;align-items:start}
+@media (min-width:900px){.layout{grid-template-columns:minmax(320px,390px) minmax(0,1fr)}}
+@media (max-width:899px){
+  .tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--surface-2);border-radius:999px;margin-bottom:14px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+  .tabs button{border:0;background:transparent;padding:9px 10px;border-radius:999px;font-weight:700;cursor:pointer}
+  .tabs button[aria-selected="true"]{background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+  .app.view-setup .main{display:none}
+  .app.view-plans .setup{display:none}
+}
+
+/* labels + inputs */
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.setup{display:grid;gap:12px}
+.block{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:grid;gap:10px;min-width:0}
+.block h2{font-family:var(--f-display);font-weight:700;font-size:22px;text-transform:uppercase;letter-spacing:.02em}
+.field{display:grid;gap:4px;min-width:0}
+.field>span{font-size:13px;color:var(--muted)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.row3{display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:end}
+.row3 .to{padding-bottom:10px;color:var(--muted);font-size:13px}
+input[type=text],input[type=number],input[type=time],select{width:100%;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-variant-numeric:tabular-nums}
+input:focus,select:focus{border-color:var(--accent)}
+.hint{font-size:12.5px;color:var(--muted);margin:0}
+
+.acts{display:grid;gap:10px;list-style:none;margin:0;padding:0}
+.act{border:1px solid var(--line);border-radius:var(--r);padding:12px;display:grid;gap:9px;background:var(--bg)}
+.act-head{display:flex;align-items:center;gap:8px}
+.act-num{font-family:var(--f-display);font-weight:800;font-size:26px;line-height:1;width:28px;text-align:center;color:var(--accent);flex:none}
+.act-head input{font-weight:700}
+.icon-btn{border:1px solid var(--line);background:var(--surface);width:34px;height:36px;border-radius:8px;cursor:pointer;flex:none;display:grid;place-items:center;font-size:15px;line-height:1}
+.icon-btn:hover{border-color:var(--ink)}
+.icon-btn:disabled{opacity:.35;cursor:default}
+.mins{display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:end}
+details.limits summary{cursor:pointer;font-size:13px;color:var(--muted)}
+details.limits[open] summary{margin-bottom:8px}
+.add-btn{border:1px dashed var(--line);background:transparent;padding:10px;border-radius:var(--r);font-weight:700;cursor:pointer;color:var(--accent)}
+.add-btn:hover{border-color:var(--accent)}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px;cursor:pointer}
+.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}
+.go{border:0;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:16px;padding:13px 16px;border-radius:var(--r);cursor:pointer}
+.go:hover{filter:brightness(1.05)}
+
+/* main */
+.main{display:grid;gap:16px;min-width:0}
+.status{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;justify-content:space-between}
+.status h2{font-family:var(--f-display);font-weight:800;font-size:30px;text-transform:uppercase;line-height:1}
+.status p{margin:0;color:var(--muted);font-size:13.5px}
+.options{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.opt{all:unset;box-sizing:border-box;cursor:pointer;display:grid;gap:8px;align-content:start;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.opt:hover{border-color:var(--muted)}
+.opt[aria-pressed="true"]{border:2px solid var(--accent);padding:11px 13px}
+.opt:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.opt .tag{justify-self:start;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted)}
+.opt[aria-pressed="true"] .tag{background:var(--accent);color:var(--accent-ink)}
+.opt .span{font-family:var(--f-mono);font-weight:600;font-size:18px;font-variant-numeric:tabular-nums}
+.opt dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:13.5px}
+.opt dt{color:var(--muted)}
+.opt dd{margin:0;font-variant-numeric:tabular-nums;text-align:right}
+.picked{font-size:12.5px;color:var(--muted)}
+
+.detail{display:grid;gap:16px;align-items:start}
+@media (min-width:1180px){.detail{grid-template-columns:minmax(0,1fr) minmax(300px,400px)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;min-width:0}
+.panel-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+
+/* timeline */
+.tl{list-style:none;margin:0;padding:0;position:relative}
+.tl li{display:grid;grid-template-columns:74px 18px minmax(0,1fr);gap:0 8px;position:relative;padding-block:7px}
+.tl time{font-family:var(--f-mono);font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums;text-align:right;padding-top:1px;white-space:nowrap}
+.tl .dot{position:relative}
+.tl .dot::before{content:"";position:absolute;left:8px;top:-7px;bottom:-7px;width:2px;background:var(--line)}
+.tl li:first-child .dot::before{top:10px}
+.tl li:last-child .dot::before{bottom:calc(100% - 10px)}
+.tl .dot::after{content:"";position:absolute;left:4px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--surface);border:2px solid var(--muted)}
+.tl .k-ride .dot::after{background:var(--rc);border-color:var(--rc)}
+.tl .k-ride .dot::before{background:var(--rc);width:4px;left:7px}
+.tl .k-act .dot::after,.tl .k-end .dot::after,.tl .k-start .dot::after{width:14px;height:14px;left:2px;top:3px;border-radius:3px;background:var(--ink);border-color:var(--ink)}
+.tl .body{min-width:0}
+.tl .main-line{font-weight:700}
+.tl .k-walk .main-line,.tl .k-wait .main-line{font-weight:400}
+.tl .sub{font-size:13px;color:var(--muted)}
+.tl .k-wait .main-line{color:var(--signal)}
+.route{display:inline-grid;place-items:center;min-width:26px;height:22px;padding:0 6px;border-radius:5px;background:var(--rc);color:#fff;font-family:var(--f-display);font-weight:800;font-size:16px;margin-right:6px;vertical-align:1px}
+.actbox{background:var(--accent-soft);border-radius:8px;padding:9px 11px;display:grid;gap:3px}
+.actbox .main-line{font-size:16px}
+.gm{display:inline-block;margin-top:6px;padding:6px 10px;border-radius:999px;border:1px solid var(--accent);color:var(--accent);font-size:13px;font-weight:700;text-decoration:none}
+.gm:hover{background:var(--accent);color:var(--accent-ink)}
+.gm-off{border-style:dashed;border-color:var(--line);color:var(--muted);font-weight:400}
+.dur{font-family:var(--f-mono);font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
+
+/* map */
+.map-wrap{display:grid;gap:10px}
+.map-svg{width:100%;height:auto;max-height:560px;display:block;margin-inline:auto;border-radius:8px;background:var(--land)}
+.m-water{fill:var(--water)}
+.m-other{fill:none;stroke:var(--line);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+.route.route-other{background:var(--line);color:var(--muted)}
+.m-stop{fill:var(--stop);stroke:var(--ink);stroke-width:1.4}
+.m-place{fill:var(--ink)}
+.m-label{font-family:var(--f-body);font-size:10.5px;fill:var(--muted);paint-order:stroke;stroke:var(--land);stroke-width:3px}
+.m-label.strong{fill:var(--ink);font-weight:700;font-size:11.5px}
+.m-walk{fill:none;stroke:var(--ink);stroke-width:2;stroke-dasharray:2 4;stroke-linecap:round}
+.m-pin{fill:var(--accent);stroke:var(--surface);stroke-width:2}
+.m-pin-t{fill:var(--accent-ink);font-family:var(--f-display);font-weight:800;font-size:13px}
+.m-water-label{font-family:var(--f-body);font-size:10px;font-style:italic;fill:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center}
+
+.notice{border-radius:var(--r);padding:14px 16px;background:var(--danger-soft);color:var(--ink);display:grid;gap:6px}
+.notice strong{color:var(--danger)}
+.notice ul{margin:0;padding-left:18px}
+.foot{margin-top:28px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);max-width:75ch}
+.foot p{margin:0 0 6px}
+.foot a{color:var(--accent)}
+@media (prefers-reduced-motion: no-preference){.opt,.icon-btn,.go{transition:border-color .15s, filter .15s}}
+</style>
+
+<div class="app view-plans" id="app">
+  <header class="top">
+    <div class="brand">
+      <h1>FoxPath</h1>
+      <p>Plan a whole day of stops around the bus · Peterborough, ON</p>
+    </div>
+    <span class="demo-pill">Routes 3 and 6 only · times between main stops are estimates</span>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tab-setup" data-view="setup" aria-selected="false">Your day</button>
+    <button role="tab" id="tab-plans" data-view="plans" aria-selected="true">Plans</button>
+  </div>
+
+  <div class="layout">
+    <section class="setup" id="setup" aria-label="Your day"></section>
+    <section class="main" id="main" aria-label="Plans"></section>
+  </div>
+
+  <footer class="foot">
+    <p>Route lines, bus stops and Route 3 Park and Route 6 Sherbrooke timetables come from the City of Peterborough's route map and schedule pages (2024 routes, as published in October 2026). The timetables list times only at main stops; times at the stops in between are estimated by spacing them evenly by distance. Other routes are drawn on the map but can't be used for trips yet.</p>
+    <p>Walking times are straight-line distance with a detour allowance at about 4.8 km/h, so real walks may differ. Always check the official schedule before you travel.</p>
+    <p>Google Maps buttons open one leg at a time, because Google Maps doesn't support multi-stop trips by transit. Google shows its own live bus options, which may differ from this plan.</p>
+  </footer>
+</div>
+
+<script src="data/peterborough.js"></script>
+<script id="engine">
+/* ================= REAL DATA (City of Peterborough files, Oct 2026) ================= */
+const BUNDLE=window.FOXPATH_DATA;
+const [LON0,LAT0]=BUNDLE.origin,[KX,KY]=BUNDLE.k;
+const ll=(lon,lat)=>({x:(lon-LON0)*KX,y:(lat-LAT0)*KY});
+// Locations from the City of Peterborough address locator, except where noted
+const PLACES=[
+  {id:'home',n:'Home',sub:'Example: near Hilliard and Marina',x:-0.241,y:2.975,cat:'home',q:'Hilliard and Marina, Peterborough, ON'},
+  {id:'work',n:'Work (Baker Tilly)',sub:'272 Charlotte St',...ll(-78.3251415,44.303409),cat:'work',q:'Baker Tilly, 272 Charlotte Street, Peterborough, ON'},
+  {id:'kfc',n:'KFC, Chemong Rd',sub:'786 Chemong Rd (placeholder)',...ll(-78.328989,44.316936),cat:'food',q:'KFC, 786 Chemong Road, Peterborough, ON'},
+  {id:'lib',n:'Peterborough Public Library',sub:'345 Aylmer St N',...ll(-78.3235305,44.303931),cat:'study',q:'Peterborough Public Library, 345 Aylmer St N, Peterborough, ON'},
+  {id:'bata',n:'Bata Library, Trent University',sub:'Trent campus (approximate spot)',...ll(-78.2916,44.3572),cat:'study',q:'Bata Library, Trent University, Peterborough, ON'},
+  {id:'fleming',n:'Fleming College',sub:'Sutherland campus (approximate spot)',...ll(-78.3766,44.2672),cat:'school',q:'Fleming College Sutherland Campus, Peterborough, ON'},
+  {id:'terminal',n:'Peterborough Terminal',sub:'Simcoe St, downtown',...ll(-78.321846,44.304634),cat:'transit',q:'Peterborough Bus Terminal, Simcoe Street, Peterborough, ON'},
+  {id:'lansdowne',n:'Lansdowne Place',sub:'645 Lansdowne St W',...ll(-78.331302,44.283456),cat:'shop',q:'Lansdowne Place, 645 Lansdowne St W, Peterborough, ON'},
+];
+const CATS={study:'Any library'};
+const ROUTES=Object.values(BUNDLE.routes);
+const TIMED_IDS=new Set(BUNDLE.patterns.flatMap(p=>p.timed));
+const placeById=Object.fromEntries(PLACES.map(p=>[p.id,p]));
+
+/* ================= NETWORK ================= */
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const WALK_PER_KM=16.25; // ~4.8 km/h with 1.3x detour factor
+const walkMin=(a,b)=> (a===b?0:Math.max(1,Math.ceil(dist(a,b)*WALK_PER_KM)));
+
+function buildNet(day){
+  const ids=Object.keys(BUNDLE.stops);
+  const stops=ids.map((id,i)=>{const s=BUNDLE.stops[id];return {id,n:s.n,x:s.p[0],y:s.p[1],i};});
+  const idx={};stops.forEach(s=>idx[s.id]=s.i);
+  const trips=[],conns=[];
+  BUNDLE.patterns.filter(p=>p.day===day).forEach(pat=>{
+    const r=BUNDLE.routes[pat.route];
+    pat.trips.forEach(times=>{
+      const seqIds=[],seqT=[];
+      pat.stops.forEach((sid,k)=>{if(times[k]!=null){seqIds.push(idx[sid]);seqT.push(times[k]);}});
+      if(seqIds.length<2)return;
+      const tid=trips.length;
+      trips.push({r,dir:pat.dir,ids:seqIds,times:seqT,head:stops[seqIds[seqIds.length-1]].n});
+      for(let k=0;k<seqIds.length-1;k++)conns.push({trip:tid,from:seqIds[k],to:seqIds[k+1],dep:seqT[k],arr:seqT[k+1],seq:k});
+    });
+  });
+  conns.sort((a,b)=>a.dep-b.dep||a.arr-b.arr||a.trip-b.trip||a.seq-b.seq);
+  const foot=stops.map(()=>[]);
+  stops.forEach(a=>stops.forEach(b=>{if(a!==b&&dist(a,b)<=0.5)foot[a.i].push({s:b.i,w:walkMin(a,b)});}));
+  return {stops,idx,trips,conns,foot,day};
+}
+let NET=buildNet('weekday');
+
+function lowerBound(arr,t,key){let lo=0,hi=arr.length;while(lo<hi){const m=(lo+hi)>>1;if(key(arr[m])<t)lo=m+1;else hi=m;}return lo;}
+
+/* ================= ROUTER (connection scan) ================= */
+function makeRouter(o){
+  const nearCache=new Map(),profCache=new Map();
+  function near(p){
+    if(nearCache.has(p.id))return nearCache.get(p.id);
+    const out=[];NET.stops.forEach(s=>{const w=walkMin(p,s);if(w<=o.maxWalk)out.push({s:s.i,w});});
+    nearCache.set(p.id,out);return out;
+  }
+  function query(A,B,t){
+    const N=NET.stops.length,C=NET.conns;
+    const orig=near(A),dest=near(B);
+    if(!orig.length||!dest.length)return null;
+    const arrive=new Array(N).fill(Infinity),board=new Array(N).fill(Infinity),ptr=new Array(N).fill(null),dw=new Array(N).fill(-1);
+    dest.forEach(d=>dw[d.s]=d.w);
+    orig.forEach(({s,w})=>{arrive[s]=t+w;board[s]=t+w+o.buffer;ptr[s]={k:'o',w};});
+    const enter=new Int32Array(NET.trips.length).fill(-1);
+    let best=Infinity,bestStop=-1;
+    const reach=(s,a,p)=>{
+      if(a<arrive[s]){arrive[s]=a;ptr[s]=p;board[s]=Math.min(board[s],a+1);
+        if(dw[s]>=0&&a+dw[s]<best){best=a+dw[s];bestStop=s;}return true;}
+      return false;
+    };
+    for(let i=lowerBound(C,t,c=>c.dep);i<C.length;i++){
+      const c=C[i];if(c.dep>=best)break;
+      if(enter[c.trip]<0&&board[c.from]<=c.dep)enter[c.trip]=i;
+      if(enter[c.trip]>=0&&reach(c.to,c.arr,{k:'t',e:enter[c.trip],x:i})){
+        for(const f of NET.foot[c.to])reach(f.s,c.arr+f.w,{k:'f',from:c.to,w:f.w});
+      }
+    }
+    if(bestStop<0)return null;
+    const segs=[];let s=bestStop,guard=0;
+    while(guard++<60){
+      const p=ptr[s];
+      if(p.k==='o'){segs.push({k:'o',s,w:p.w});break;}
+      if(p.k==='t'){const ce=C[p.e],cx=C[p.x];segs.push({k:'ride',trip:ce.trip,from:ce.from,to:cx.to,dep:ce.dep,arr:cx.arr,n:cx.seq-ce.seq+1});s=ce.from;}
+      else{segs.push({k:'foot',from:p.from,to:s,w:p.w});s=p.from;}
+    }
+    segs.reverse();
+    const first=segs.find(x=>x.k==='ride');if(!first||segs[0].k!=='o')return null;
+    const w0=segs[0].w,leave=first.dep-o.buffer-w0;
+    const steps=[];let cur=leave,wait=0,walk=0,rides=0;
+    steps.push({k:'walk',from:{p:A.id},to:{s:segs[0].s},t0:cur,t1:cur+w0,w:w0});walk+=w0;cur+=w0;
+    for(const sg of segs.slice(1)){
+      if(sg.k==='ride'){
+        if(sg.dep>cur){steps.push({k:'wait',at:sg.from,t0:cur,t1:sg.dep});wait+=sg.dep-cur;}
+        steps.push({k:'ride',trip:sg.trip,from:sg.from,to:sg.to,t0:sg.dep,t1:sg.arr,n:sg.n});rides++;cur=sg.arr;
+      }else{steps.push({k:'walk',from:{s:sg.from},to:{s:sg.to},t0:cur,t1:cur+sg.w,w:sg.w});walk+=sg.w;cur+=sg.w;}
+    }
+    const wE=dw[bestStop];
+    steps.push({k:'walk',from:{s:bestStop},to:{p:B.id},t0:cur,t1:cur+wE,w:wE});walk+=wE;cur+=wE;
+    return {leave,arr:cur,steps,wait,walk,rides};
+  }
+  // every non-dominated bus journey A->B across the service day
+  function profile(A,B){
+    const key=A.id+'>'+B.id;if(profCache.has(key))return profCache.get(key);
+    const out=[];let t=300;
+    while(t<1440){
+      const j=query(A,B,t);if(!j)break;
+      while(out.length&&out[out.length-1].arr>=j.arr)out.pop();
+      out.push(j);t=j.leave+1;
+    }
+    profCache.set(key,out);return out;
+  }
+  function walkLeg(A,B,t,w){
+    return {leave:t,arr:t+w,wait:0,walk:w,rides:0,isWalk:true,
+      steps:w?[{k:'walk',from:{p:A.id},to:{p:B.id},t0:t,t1:t+w,w}]:[]};
+  }
+  function canWalk(A,B){return A.id===B.id||walkMin(A,B)<=o.walkDirect;}
+  function minTravel(A,B){
+    let m=canWalk(A,B)?walkMin(A,B):Infinity;
+    for(const j of profile(A,B))m=Math.min(m,j.arr-j.leave);
+    return m;
+  }
+  function options(A,B,ready,latest,deadline){
+    const res=[],prof=profile(A,B);
+    for(let i=lowerBound(prof,ready,j=>j.leave);i<prof.length&&prof[i].leave<=latest;i++){
+      if(prof[i].arr>deadline)break;res.push(prof[i]);
+    }
+    if(canWalk(A,B)){
+      const w=walkMin(A,B);
+      for(let t=ready,n=0;t<=latest&&t+w<=deadline&&n<48;t+=5,n++)res.push(walkLeg(A,B,t,w));
+    }
+    return res;
+  }
+  return {near,query,profile,options,minTravel,canWalk};
+}
+
+/* ================= DAY SOLVER ================= */
+const CAP=150000;
+function permutations(a){if(a.length<=1)return [a.slice()];const out=[];a.forEach((x,i)=>{permutations([...a.slice(0,i),...a.slice(i+1)]).forEach(p=>out.push([x,...p]));});return out;}
+
+function searchDays(inp,R,endFrom,endTo){
+  const acts=inp.acts,n=acts.length;
+  const START=placeById[inp.start.place],END=placeById[inp.end.place];
+  const cand=acts.map(a=>a.place.startsWith('any:')?PLACES.filter(p=>p.cat===a.place.slice(4)):[placeById[a.place]]);
+  const orders=(inp.reorder&&n>1&&n<=5)?permutations([...Array(n).keys()]):[[...Array(n).keys()]];
+  const leaves=[];let truncated=false;
+  for(const order of orders){
+    const fromC=k=>k===0?[START]:cand[order[k-1]];
+    const toC=k=>k<n?cand[order[k]]:[END];
+    const minLeg=[];
+    for(let k=0;k<=n;k++){let m=Infinity;for(const a of fromC(k))for(const b of toC(k))m=Math.min(m,R.minTravel(a,b));minLeg.push(m);}
+    const tail=new Array(n+1).fill(0);
+    for(let k=n-1;k>=0;k--)tail[k]=acts[order[k]].min+minLeg[k+1]+tail[k+1];
+    if(minLeg.some(m=>m===Infinity))continue;
+    const stack=[];
+    const leaf=()=>{
+      const legs=stack.slice(0,n+1).map(x=>({...x}));
+      let wait=0,walk=0,transfers=0,spare=0;const durs={};
+      legs.forEach(l=>{wait+=l.op.wait;walk+=l.op.walk;transfers+=Math.max(0,l.op.rides-1);});
+      for(let j=0;j<n;j++){
+        const act=acts[order[j]],a=legs[j].op.arr,s=legs[j].s,lv=legs[j+1].op.leave;
+        wait+=s-a;const d=lv-s;durs[act.id]=d;
+        if(act.max!=null&&d>act.max)spare+=d-act.max;
+      }
+      leaves.push({legs,order:order.slice(),durs,wait,walk,transfers,spare,start:legs[0].op.leave,end:legs[n].op.arr});
+    };
+    const dfs=(k,from,ready,latest)=>{
+      if(leaves.length>=CAP){truncated=true;return;}
+      for(const to of toC(k)){
+        const opts=R.options(from,to,ready,latest,endTo-tail[k]);
+        for(const op of opts){
+          if(k===n){if(op.arr>=endFrom&&op.arr<=endTo){stack[k]={op,to};leaf();if(leaves.length>=CAP){truncated=true;return;}}continue;}
+          const act=acts[order[k]];
+          const s=Math.max(op.arr,act.after??-1),r=s+act.min,lt=act.by??Infinity;
+          if(r>lt)continue;
+          if(r+minLeg[k+1]+tail[k+1]>endTo)continue;
+          stack[k]={op,to,s};dfs(k+1,to,r,lt);
+          if(truncated)return;
+        }
+      }
+    };
+    dfs(0,START,inp.start.from,inp.start.to);
+    if(truncated)break;
+  }
+  return {leaves,truncated};
+}
+
+const METRIC={
+  wait:p=>[p.wait,p.walk,p.spare,-p.start],
+  walk:p=>[p.walk,p.wait,p.spare],
+  late:p=>[-p.start,p.wait,p.walk],
+  early:p=>[p.end,p.wait,p.walk],
+};
+const TAGS={wait:'Least waiting',walk:'Least walking',late:'Leaves latest',early:'Home earliest'};
+function goalKey(goal){
+  if(goal.startsWith('max:')){const id=goal.slice(4);return p=>[-(p.durs[id]??0),p.wait,p.walk,p.spare];}
+  return METRIC[goal]||METRIC.wait;
+}
+function cmpArr(a,b){for(let i=0;i<a.length;i++){if(a[i]!==b[i])return a[i]-b[i];}return 0;}
+function meaningful(a,b){
+  if(a.order.join()!==b.order.join())return true;
+  if(a.legs.some((l,i)=>l.to.id!==b.legs[i].to.id))return true;
+  if(Math.abs(a.start-b.start)>=10||Math.abs(a.end-b.end)>=10)return true;
+  if(Math.abs(a.wait-b.wait)>=5||Math.abs(a.walk-b.walk)>=5)return true;
+  for(const k in a.durs)if(Math.abs(a.durs[k]-b.durs[k])>=15)return true;
+  return false;
+}
+function pickOptions(leaves,inp){
+  const gk=goalKey(inp.goal);
+  const keyed=leaves.map(p=>({p,k:gk(p)}));keyed.sort((x,y)=>cmpArr(x.k,y.k));
+  const sorted=keyed.map(x=>x.p);
+  let goalTag=TAGS[inp.goal];
+  if(inp.goal.startsWith('max:')){const a=inp.acts.find(a=>a.id===inp.goal.slice(4));goalTag='Most '+(a?.label||'stop').toLowerCase()+' time';}
+  const picks=[{p:sorted[0],tag:goalTag}];
+  const ok=c=>c&&picks.every(q=>meaningful(c,q.p));
+  const alts=Object.keys(TAGS).filter(m=>m!==inp.goal).map(m=>[m,TAGS[m]]);
+  if(inp.reorder&&inp.acts.length>1)alts.unshift(['order','Different order']);
+  for(const [m,tag] of alts){
+    if(picks.length>=3)break;
+    let c=null;
+    if(m==='order')c=sorted.find(p=>p.order.join()!==sorted[0].order.join());
+    else{const mk=METRIC[m];let bk=null;for(const p of leaves){const k=[...mk(p),...gk(p)];if(!c||cmpArr(k,bk)<0){c=p;bk=k;}}}
+    if(ok(c))picks.push({p:c,tag});
+  }
+  for(const p of sorted){if(picks.length>=3)break;if(ok(p))picks.push({p,tag:'Runner-up'});}
+  return picks;
+}
+
+function solve(inp){
+  if(NET.day!==inp.day)NET=buildNet(inp.day);
+  const R=makeRouter(inp);
+  const res=searchDays(inp,R,inp.end.from,inp.end.to);
+  if(res.leaves.length)return {ok:true,picks:pickOptions(res.leaves,inp),count:res.leaves.length,truncated:res.truncated,R};
+  // diagnose
+  const reasons=[];
+  const placeIds=[inp.start.place,inp.end.place,...inp.acts.flatMap(a=>a.place.startsWith('any:')?PLACES.filter(p=>p.cat===a.place.slice(4)).map(p=>p.id):[a.place])];
+  const far=[...new Set(placeIds)].map(id=>placeById[id]).filter(p=>!R.near(p).length);
+  if(far.length)reasons.push(`No bus stop is within ${inp.maxWalk} min walk of ${far.map(p=>p.n).join(', ')}. Raise the max walk to a stop.`);
+  const relaxed=searchDays({...inp,goal:'early'},R,0,1440+240);
+  if(relaxed.leaves.length){
+    let bestEnd=Infinity;relaxed.leaves.forEach(p=>bestEnd=Math.min(bestEnd,p.end));
+    if(bestEnd>inp.end.to)reasons.push(`With these minimum times, the earliest you could arrive at ${placeById[inp.end.place].n} is ${fmt(bestEnd)}, after your ${fmt(inp.end.to)} limit. Leave earlier, shorten a stop, or push the arrival window later.`);
+    else reasons.push(`A day fits, but not with arrival between ${fmt(inp.end.from)} and ${fmt(inp.end.to)}. Try widening the arrival window.`);
+  }else if(!far.length){
+    reasons.push('No Route 3 or Route 6 trips link these places at those times. Only those two routes have timetables so far. Try a longer max walk, or check the time limits on each stop.');
+  }
+  return {ok:false,reasons};
+}
+
+/* ================= FORMAT ================= */
+function fmt(m){m=Math.round(m);const d=Math.floor(m/1440);m-=d*1440;let h=Math.floor(m/60),mm=m%60;const ap=h>=12?'pm':'am';h=h%12||12;return `${h}:${String(mm).padStart(2,'0')} ${ap}`+(d?' (+1 day)':'');}
+function fmtDur(m){m=Math.round(m);if(m<60)return m+' min';const h=Math.floor(m/60),r=m%60;return r?`${h} h ${r} min`:`${h} h`;}
+function parseT(s){if(!s)return null;const [h,m]=s.split(':').map(Number);return Number.isFinite(h)?h*60+(m||0):null;}
+if(typeof module!=='undefined')module.exports={solve,fmt,fmtDur,parseT,getNet:()=>NET,PLACES,placeById};
+</script>
+
+<script>
+/* ================= UI ================= */
+const DEFAULT_STATE={
+  start:{place:'home',from:'10:00',to:'11:00'},
+  end:{place:'home',from:'18:00',to:'19:00'},
+  acts:[
+    {id:'a1',label:'Eat',place:'kfc',min:20,max:30,after:'',by:''},
+    {id:'a2',label:'Study',place:'lib',min:180,max:'',after:'',by:''},
+  ],
+  day:['sunday','weekday','weekday','weekday','weekday','weekday','saturday'][new Date().getDay()],
+  reorder:false,maxWalk:10,buffer:2,walkDirect:12,goal:'max:a2',
+  addr:{home:'Hilliard and Marina, Peterborough, ON',work:'Baker Tilly, 272 Charlotte Street, Peterborough, ON'}
+};
+let state;
+try{state=JSON.parse(localStorage.getItem('foxpath-v1'))||null;}catch(e){state=null;}
+if(!state||!Array.isArray(state.acts))state=structuredClone(DEFAULT_STATE);
+if(!state.addr)state.addr={...DEFAULT_STATE.addr};
+if(!state.day)state.day=DEFAULT_STATE.day;
+const okPlace=v=>placeById[v]||(v&&v.startsWith('any:')&&CATS[v.slice(4)]);
+state.acts.forEach(a=>{if(!okPlace(a.place))a.place='lib';});
+['start','end'].forEach(k=>{if(!placeById[state[k].place])state[k].place='home';});
+let result=null,selected=0,nextId=Date.now()%100000;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function save(){try{localStorage.setItem('foxpath-v1',JSON.stringify(state));}catch(e){}}
+
+function placeSelect(id,val,allowAny){
+  let h=`<select id="${id}">`;
+  if(allowAny){h+=`<optgroup label="Let the app pick">`+Object.entries(CATS).map(([k,v])=>`<option value="any:${k}"${val==='any:'+k?' selected':''}>${v}</option>`).join('')+`</optgroup><optgroup label="Specific place">`;}
+  h+=PLACES.map(p=>`<option value="${p.id}"${val===p.id?' selected':''}>${esc(p.n)}</option>`).join('');
+  if(allowAny)h+='</optgroup>';
+  return h+'</select>';
+}
+function goalOptions(){
+  const o=state.acts.map((a,i)=>[`max:${a.id}`,`Most time at: ${a.label||'Stop '+(i+1)}`]);
+  o.push(['wait','Least waiting at stops'],['walk','Least walking'],['late','Leave as late as possible'],['early','Get back as early as possible']);
+  if(!o.some(x=>x[0]===state.goal))state.goal=o[0][0];
+  return o.map(([v,l])=>`<option value="${v}"${v===state.goal?' selected':''}>${esc(l)}</option>`).join('');
+}
+function renderSetup(){
+  const s=state;
+  const acts=s.acts.map((a,i)=>`
+    <li class="act" data-id="${a.id}">
+      <div class="act-head">
+        <span class="act-num" title="${s.reorder?'The app may change the order':'Stop '+(i+1)}">${s.reorder?'·':i+1}</span>
+        <input type="text" id="act-${a.id}-label" value="${esc(a.label)}" placeholder="What you'll do" aria-label="Stop name">
+        <button class="icon-btn" data-action="up" data-id="${a.id}" aria-label="Move up" ${i===0?'disabled':''}>↑</button>
+        <button class="icon-btn" data-action="down" data-id="${a.id}" aria-label="Move down" ${i===s.acts.length-1?'disabled':''}>↓</button>
+        <button class="icon-btn" data-action="remove" data-id="${a.id}" aria-label="Remove stop">✕</button>
+      </div>
+      <label class="field"><span>Where</span>${placeSelect(`act-${a.id}-place`,a.place,true)}</label>
+      <div class="mins">
+        <label class="field"><span>At least (min)</span><input type="number" min="0" step="5" id="act-${a.id}-min" value="${esc(a.min)}"></label>
+        <span class="to" style="padding-bottom:10px;color:var(--muted);font-size:13px">to</span>
+        <label class="field"><span>At most (min)</span><input type="number" min="0" step="5" id="act-${a.id}-max" value="${esc(a.max)}" placeholder="No limit"></label>
+      </div>
+      <details class="limits"${a.after||a.by?' open':''}>
+        <summary>Time limits for this stop</summary>
+        <div class="row2">
+          <label class="field"><span>Start no earlier than</span><input type="time" step="300" id="act-${a.id}-after" value="${esc(a.after)}"></label>
+          <label class="field"><span>Leave no later than</span><input type="time" step="300" id="act-${a.id}-by" value="${esc(a.by)}"></label>
+        </div>
+      </details>
+    </li>`).join('');
+  $('#setup').innerHTML=`
+    <div class="block">
+      <h2>Your places</h2>
+      <label class="field"><span>Home address</span><input type="text" id="addr-home" value="${esc(s.addr.home)}" autocomplete="street-address"></label>
+      <label class="field"><span>Work address</span><input type="text" id="addr-work" value="${esc(s.addr.work)}"></label>
+      <p class="hint">Used for the Google Maps buttons. Saved only in this browser. Changing an address here doesn't move it on the planner's map yet.</p>
+    </div>
+    <div class="block">
+      <h2>Start</h2>
+      <label class="field"><span>Day</span><select id="day">${[['weekday','Weekday (Mon to Fri)'],['saturday','Saturday'],['sunday','Sunday or holiday']].map(([v,l])=>`<option value="${v}"${s.day===v?' selected':''}>${l}</option>`).join('')}</select></label>
+      <label class="field"><span>From</span>${placeSelect('start-place',s.start.place,false)}</label>
+      <div class="row3">
+        <label class="field"><span>Leave between</span><input type="time" step="300" id="start-from" value="${esc(s.start.from)}"></label>
+        <span class="to">and</span>
+        <label class="field"><span>&nbsp;</span><input type="time" step="300" id="start-to" value="${esc(s.start.to)}" aria-label="Leave by"></label>
+      </div>
+    </div>
+    <div class="block">
+      <h2>Stops</h2>
+      <ol class="acts">${acts}</ol>
+      <button class="add-btn" data-action="add">+ Add a stop</button>
+      <label class="check"><input type="checkbox" id="reorder" ${s.reorder?'checked':''}><span>Let the app choose the order of stops<br><span class="hint">Useful when your day is flexible, for example studying first and eating later.</span></span></label>
+    </div>
+    <div class="block">
+      <h2>End</h2>
+      <label class="field"><span>Finish at</span>${placeSelect('end-place',s.end.place,false)}</label>
+      <div class="row3">
+        <label class="field"><span>Arrive between</span><input type="time" step="300" id="end-from" value="${esc(s.end.from)}"></label>
+        <span class="to">and</span>
+        <label class="field"><span>&nbsp;</span><input type="time" step="300" id="end-to" value="${esc(s.end.to)}" aria-label="Arrive by"></label>
+      </div>
+    </div>
+    <div class="block">
+      <h2>Preferences</h2>
+      <label class="field"><span>Optimize for</span><select id="goal">${goalOptions()}</select></label>
+      <div class="row2">
+        <label class="field"><span>Max walk to a stop (min)</span><input type="number" min="1" max="30" id="maxWalk" value="${esc(s.maxWalk)}"></label>
+        <label class="field"><span>Be at the stop early (min)</span><input type="number" min="0" max="15" id="buffer" value="${esc(s.buffer)}"></label>
+      </div>
+      <label class="field"><span>Walk instead of the bus when the walk is under (min)</span><input type="number" min="0" max="45" id="walkDirect" value="${esc(s.walkDirect)}"></label>
+    </div>
+    <button class="go" data-action="find">Find plans</button>`;
+}
+function readSetup(){
+  const v=id=>document.getElementById(id)?.value??'';
+  const num=(id,d)=>{const x=parseFloat(v(id));return Number.isFinite(x)?x:d;};
+  state.start={place:v('start-place'),from:v('start-from'),to:v('start-to')};
+  state.end={place:v('end-place'),from:v('end-from'),to:v('end-to')};
+  state.acts=state.acts.map(a=>({id:a.id,label:v(`act-${a.id}-label`),place:v(`act-${a.id}-place`),min:v(`act-${a.id}-min`),max:v(`act-${a.id}-max`),after:v(`act-${a.id}-after`),by:v(`act-${a.id}-by`)}));
+  state.reorder=document.getElementById('reorder')?.checked||false;
+  state.day=v('day')||state.day;
+  state.addr={home:v('addr-home'),work:v('addr-work')};
+  state.goal=v('goal')||state.goal;
+  state.maxWalk=num('maxWalk',8);state.buffer=num('buffer',2);state.walkDirect=num('walkDirect',12);
+  save();
+}
+function toInput(){
+  const T=s=>parseT(s);
+  return {
+    start:{place:state.start.place,from:T(state.start.from)??600,to:T(state.start.to)??(T(state.start.from)??600)},
+    end:{place:state.end.place,from:T(state.end.from)??0,to:T(state.end.to)??1439},
+    acts:state.acts.map((a,i)=>{const mn=Math.max(0,parseFloat(a.min)||0);let mx=parseFloat(a.max);mx=Number.isFinite(mx)&&mx>=mn?mx:null;
+      return {id:a.id,label:a.label||'Stop '+(i+1),place:a.place,min:mn,max:mx,after:T(a.after),by:T(a.by)};}),
+    day:state.day,reorder:state.reorder,maxWalk:Math.max(1,state.maxWalk),buffer:Math.max(0,state.buffer),walkDirect:Math.max(0,state.walkDirect),goal:state.goal
+  };
+}
+function run(){
+  const inp=toInput();
+  const t0=performance.now();
+  if(inp.start.to<inp.start.from)result={ok:false,reasons:['The latest leave time is before the earliest one.']};
+  else if(inp.end.to<inp.end.from)result={ok:false,reasons:['The latest arrival time is before the earliest one.']};
+  else result=solve(inp);
+  result.ms=Math.round(performance.now()-t0);result.inp=inp;selected=0;
+  renderMain();
+}
+
+/* ---------- plan rendering ---------- */
+function gq(p){if(p.id==='home')return state.addr.home||null;if(p.id==='work')return state.addr.work||null;return p.q;}
+function gmLink(from,to,walk){
+  const a=gq(from),b=gq(to);
+  if(!a||!b)return `<span class="gm gm-off">Add an address for ${esc((!a?from:to).n)} under Your places to get a Google Maps link</span>`;
+  const u='https://www.google.com/maps/dir/?api=1&origin='+encodeURIComponent(a)+'&destination='+encodeURIComponent(b)+'&travelmode='+(walk?'walking':'transit');
+  return `<a class="gm" href="${u}" target="_blank" rel="noopener">${walk?'Walking':'Transit'} directions to ${esc(to.n)} in Google Maps ↗</a>`;
+}
+const nm=ref=>ref.p?placeById[ref.p].n:NET.stops[ref.s].n+' stop';
+function planRows(plan,inp){
+  const rows=[];const n=plan.legs.length-1;
+  const startP=placeById[inp.start.place],endP=plan.legs[n].to;
+  const legLink=k=>{const leg=plan.legs[k];const from=k===0?startP:plan.legs[k-1].to;return gmLink(from,leg.to,leg.op.isWalk||leg.op.rides===0);};
+  rows.push({k:'start',t:plan.start,main:`Leave ${esc(startP.n)}`,link:legLink(0)});
+  plan.legs.forEach((leg,k)=>{
+    for(const st of leg.op.steps){
+      if(st.k==='walk'&&st.w>0)rows.push({k:'walk',t:st.t0,main:`Walk ${st.w} min to ${esc(nm(st.to))}`});
+      else if(st.k==='wait')rows.push({k:'wait',t:st.t0,main:`Wait ${fmtDur(st.t1-st.t0)} at ${esc(NET.stops[st.at].n)}`,sub:`Bus leaves at ${fmt(st.t1)}`});
+      else if(st.k==='ride'){const tr=NET.trips[st.trip];
+        rows.push({k:'ride',t:st.t0,rc:tr.r.c,main:`<span class="route" style="--rc:${tr.r.c}">${tr.r.id}</span>${esc(tr.r.name)} toward ${esc(tr.head)}`,
+          sub:`Board at ${esc(NET.stops[st.from].n)} · get off at ${esc(NET.stops[st.to].n)}, ${fmt(st.t1)} · ${fmtDur(st.t1-st.t0)}, ${st.n} stop${st.n>1?'s':''}`+((!TIMED_IDS.has(NET.stops[st.from].id)||!TIMED_IDS.has(NET.stops[st.to].id))?' · estimated, not a timed stop':'')});}
+    }
+    if(k<n){
+      const act=inp.acts[plan.order[k]],d=plan.durs[act.id],s=leg.s,early=s-leg.op.arr;
+      const notes=[];
+      if(act.place.startsWith('any:'))notes.push('App picked this place');
+      if(early>0)notes.push(`You arrive ${fmtDur(early)} before it starts`);
+      if(act.max!=null&&d>act.max)notes.push(`includes ${fmtDur(d-act.max)} spare beyond your ${fmtDur(act.max)} max`);
+      else notes.push(`your range: ${fmtDur(act.min)}${act.max!=null?' to '+fmtDur(act.max):' or more'}`);
+      rows.push({k:'act',t:s,main:`${esc(act.label)} at ${esc(leg.to.n)}`,dur:d,until:plan.legs[k+1].op.leave,sub:notes.join(' · '),link:legLink(k+1)});
+    }
+  });
+  rows.push({k:'end',t:plan.end,main:`Arrive at ${esc(endP.n)}`});
+  return rows;
+}
+function rowHTML(r){
+  const style=r.rc?` style="--rc:${r.rc}"`:'';
+  const body=r.k==='act'
+    ?`<div class="actbox"><div class="main-line">${r.main}</div><div><span class="dur">${fmtDur(r.dur)}</span> · until ${fmt(r.until)}</div><div class="sub">${r.sub}</div>${r.link||''}</div>`
+    :`<div class="main-line">${r.main}</div>${r.sub?`<div class="sub">${r.sub}</div>`:''}${r.link||''}`;
+  return `<li class="k-${r.k}"${style}><time>${fmt(r.t)}</time><span class="dot" aria-hidden="true"></span><div class="body">${body}</div></li>`;
+}
+function optionCard(pick,i,inp){
+  const p=pick.p;
+  const actRows=p.order.map(oi=>{const a=inp.acts[oi];return `<dt>${esc(a.label)}</dt><dd>${fmtDur(p.durs[a.id])}</dd>`;}).join('');
+  const picked=p.legs.slice(0,-1).map((l,k)=>({l,a:inp.acts[p.order[k]]})).filter(x=>x.a.place.startsWith('any:')).map(x=>esc(x.l.to.n));
+  const order=inp.reorder&&inp.acts.length>1?`<div class="picked">Order: ${p.order.map(oi=>esc(inp.acts[oi].label)).join(' → ')}</div>`:'';
+  return `<button class="opt" data-opt="${i}" aria-pressed="${i===selected}">
+    <span class="tag">${esc(pick.tag)}</span>
+    <span class="span">${fmt(p.start)} → ${fmt(p.end)}</span>
+    <dl>${actRows}<dt>Waiting</dt><dd>${fmtDur(p.wait)}</dd><dt>Walking</dt><dd>${fmtDur(p.walk)}</dd><dt>Bus changes</dt><dd>${p.transfers}</dd></dl>
+    ${order}${picked.length?`<div class="picked">App picked: ${picked.join(', ')}</div>`:''}
+  </button>`;
+}
+function renderMain(){
+  const m=$('#main');
+  if(!result){m.innerHTML='';return;}
+  if(!result.ok){
+    m.innerHTML=`<div class="status"><h2>No plan fits yet</h2></div>
+      <div class="notice"><strong>Here's what's blocking it</strong><ul>${result.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul></div>
+      <div class="panel">${mapHTML(null)}</div>`;
+    return;
+  }
+  const inp=result.inp,pick=result.picks[selected];
+  m.innerHTML=`
+    <div class="status"><h2>${result.picks.length} plan${result.picks.length>1?'s':''} for your day</h2>
+      <p>Compared ${result.count.toLocaleString()} workable schedules${result.truncated?' (search capped)':''} in ${result.ms} ms</p></div>
+    <div class="options">${result.picks.map((p,i)=>optionCard(p,i,inp)).join('')}</div>
+    <div class="detail">
+      <div class="panel">
+        <div class="panel-head"><span class="eyebrow">Step by step · ${esc(pick.tag)}</span></div>
+        <ol class="tl">${planRows(pick.p,inp).map(rowHTML).join('')}</ol>
+      </div>
+      <div class="panel">${mapHTML(pick.p)}</div>
+    </div>`;
+}
+
+/* ---------- route map (real City of Peterborough route lines) ---------- */
+const CITY_LINES=BUNDLE.lines.filter(l=>l.r!=='31'&&l.r!=='32');
+const MB=(()=>{let a=[Infinity,Infinity,-Infinity,-Infinity];CITY_LINES.forEach(l=>l.pts.forEach(([x,y])=>{a[0]=Math.min(a[0],x);a[1]=Math.min(a[1],y);a[2]=Math.max(a[2],x);a[3]=Math.max(a[3],y);}));PLACES.forEach(p=>{a[0]=Math.min(a[0],p.x);a[1]=Math.min(a[1],p.y);a[2]=Math.max(a[2],p.x);a[3]=Math.max(a[3],p.y);});return [a[0]-.3,a[1]-.3,a[2]+.3,a[3]+.3];})();
+const S=520/(MB[2]-MB[0]);
+const P=(x,y)=>[+((x-MB[0])*S).toFixed(1),+((MB[3]-y)*S).toFixed(1)];
+const pts=a=>a.map(o=>P(o.x,o.y).join(',')).join(' ');
+const ptsA=a=>a.map(([x,y])=>P(x,y).join(',')).join(' ');
+function mapHTML(plan){
+  const W=(MB[2]-MB[0])*S,H=(MB[3]-MB[1])*S;
+  let g='';
+  const dim=plan?0.3:0.9;
+  CITY_LINES.forEach(l=>{const r=BUNDLE.routes[l.r];
+    g+=r?`<polyline points="${ptsA(l.pts)}" fill="none" stroke="${r.c}" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round" opacity="${dim}"/>`
+        :`<polyline class="m-other" points="${ptsA(l.pts)}"><title>${esc(l.name)} (no timetable loaded yet)</title></polyline>`;});
+  const used=new Set();
+  if(plan){
+    plan.legs.forEach(leg=>leg.op.steps.forEach(st=>{
+      if(st.k==='ride'){const tr=NET.trips[st.trip];const a=tr.ids.indexOf(st.from),b=tr.ids.indexOf(st.to);
+        const seg=tr.ids.slice(a,b+1).map(i=>NET.stops[i]);seg.forEach(s=>used.add(s.i));
+        g+=`<polyline points="${pts(seg)}" fill="none" stroke="${tr.r.c}" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>`;}
+      else if(st.k==='walk'&&st.w>0){const a=st.from.p?placeById[st.from.p]:NET.stops[st.from.s],b=st.to.p?placeById[st.to.p]:NET.stops[st.to.s];
+        const [x1,y1]=P(a.x,a.y),[x2,y2]=P(b.x,b.y);g+=`<line class="m-walk" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;}
+    }));
+  }
+  NET.stops.forEach(s=>{const [x,y]=P(s.x,s.y);g+=`<circle class="m-stop" cx="${x}" cy="${y}" r="${used.has(s.i)?4:2.2}"><title>${esc(s.n)}</title></circle>`;});
+  const pins=new Map();
+  if(plan){
+    pins.set(result.inp.start.place,['S']);
+    plan.legs.forEach((l,k)=>{const lab=k<plan.legs.length-1?String(k+1):'E';const arr=pins.get(l.to.id)||[];arr.push(lab);pins.set(l.to.id,arr);});
+  }
+  PLACES.forEach(p=>{
+    const [x,y]=P(p.x,p.y);
+    if(pins.has(p.id))return;
+    g+=`<rect class="m-place" x="${x-3.5}" y="${y-3.5}" width="7" height="7" transform="rotate(45 ${x} ${y})"><title>${esc(p.n)}</title></rect>`;
+    if(!plan)g+=`<text class="m-label" x="${x+8}" y="${y+4}">${esc(p.n)}</text>`;
+  });
+  pins.forEach((labs,id)=>{
+    const p=placeById[id];if(!p)return;const [x,y]=P(p.x,p.y);const t=labs.join('/');const w=Math.max(20,t.length*8+10);
+    g+=`<g><title>${esc(p.n)}</title><rect class="m-pin" x="${x-w/2}" y="${y-11}" width="${w}" height="22" rx="11"/><text class="m-pin-t" x="${x}" y="${y+5}" text-anchor="middle">${t}</text></g>`;
+    const right=x<W-150;
+    g+=`<text class="m-label strong" x="${right?x+w/2+5:x-w/2-5}" y="${y+4}" text-anchor="${right?'start':'end'}">${esc(p.n)}</text>`;
+  });
+  const legend=ROUTES.map(r=>`<span><span class="route" style="--rc:${r.c}">${r.id}</span>${esc(r.name)}</span>`).join('')+`<span><span class="route route-other">·</span>Other routes, no timetable yet</span>`;
+  return `<div class="map-wrap"><div class="panel-head"><span class="eyebrow">Peterborough Transit routes</span><span class="hint">${plan?'S start · numbers are your stops · E end · dotted lines are walks':'Route lines from the City of Peterborough'}</span></div>
+    <svg class="map-svg" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" role="img" aria-label="Map of Peterborough Transit routes${plan?' with the selected plan highlighted':''}">${g}</svg>
+    <div class="legend">${legend}</div></div>`;
+}
+
+/* ---------- events ---------- */
+function setView(v){
+  const app=$('#app');app.classList.toggle('view-setup',v==='setup');app.classList.toggle('view-plans',v==='plans');
+  document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===v)));
+}
+document.querySelector('.tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-view]');if(b)setView(b.dataset.view);});
+$('#setup').addEventListener('input',e=>{
+  readSetup();
+  if(e.target.id&&e.target.id.endsWith('-label')){const g=$('#goal');if(g)g.innerHTML=goalOptions();}
+});
+$('#setup').addEventListener('change',e=>{readSetup();if(e.target.id==='reorder')renderSetup();});
+$('#setup').addEventListener('click',e=>{
+  const b=e.target.closest('[data-action]');if(!b)return;
+  e.preventDefault();readSetup();
+  const i=state.acts.findIndex(a=>a.id===b.dataset.id);
+  switch(b.dataset.action){
+    case 'add':state.acts.push({id:'a'+(++nextId),label:'',place:'work',min:30,max:'',after:'',by:''});break;
+    case 'remove':state.acts.splice(i,1);break;
+    case 'up':if(i>0)[state.acts[i-1],state.acts[i]]=[state.acts[i],state.acts[i-1]];break;
+    case 'down':if(i<state.acts.length-1)[state.acts[i+1],state.acts[i]]=[state.acts[i],state.acts[i+1]];break;
+    case 'find':run();setView('plans');window.scrollTo({top:0,behavior:'smooth'});return;
+  }
+  save();renderSetup();
+});
+$('#main').addEventListener('click',e=>{const b=e.target.closest('[data-opt]');if(!b)return;selected=+b.dataset.opt;renderMain();});
+
+renderSetup();run();
+</script>

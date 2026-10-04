@@ -1,0 +1,4 @@
+.DS_Store
+*.token
+.env
+__pycache__/
