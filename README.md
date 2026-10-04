@@ -15,12 +15,16 @@ The site lives in [`docs/`](docs/) and is served by GitHub Pages.
 
 ## Coverage
 
-FoxPaths currently covers **Peterborough, Ontario**, with timetables for **Route 3 Park** and **Route 6 Sherbrooke**
+FoxPaths currently covers **Peterborough, Ontario**, with timetables for **Route 2 Chemong**, **Route 3 Park**,
+**Route 5 The Parkway** and **Route 6 Sherbrooke**
 (weekday, Saturday, and Sunday/holiday). The other Peterborough Transit routes are drawn on the map but can't be used
 for trips until their schedules are added.
 
 The City's timetables list times only at a handful of main stops per route. FoxPaths estimates times at the stops in
-between by spacing them evenly by distance, and marks those times as estimates. Walking times use straight-line
+between by spacing them evenly by distance, and marks those times as estimates. A few main stops aren't in the City's stop
+file (Trent U Bata Library, Fleming College, Lansdowne at Memorial Centre, Fisher at Shorelines Casino and Airport at
+Spillsbury), so their positions are approximate. Route 5's in-between stops are taken from stops along its route line,
+because the stop file barely tags Route 5. Walking times use straight-line
 distance with a detour allowance at about 4.8 km/h. Always check the official schedule before you travel.
 
 ## Data
@@ -31,7 +35,7 @@ All transit data comes from the City of Peterborough:
 | --- | --- |
 | `bus-routes.geojson` | City route map server, layer "Regular Routes" |
 | `bus-stops.geojson` | City route map server, layer "Regular Bus Stop" |
-| `route-3-park.html`, `route-6-sherbrooke.html` | Route schedule pages on peterborough.ca |
+| `route-2-chemong.html`, `route-3-park.html`, `route-5-the-parkway.html`, `route-6-sherbrooke.html` | Route schedule pages on peterborough.ca |
 
 Place locations (home, work, the library and so on) come from the City's address locator.
 
@@ -48,8 +52,8 @@ This reads `data/raw/` and writes `docs/data/peterborough.js`, which the site lo
 To add a route:
 
 1. Save the route's schedule page from peterborough.ca into `data/raw/`.
-2. In `tools/build_data.py`, add the file to `SCHED`, its two direction letters to `DIRS`, its name and colour to
-   `ROUTE_NAME` and `ROUTE_COLOR`, and map each timetable column heading to a stop ID in `TIMED`.
+2. In `tools/build_data.py`, add the route to `ROUTES` and make sure each timetable column heading is in `TIMED`.
+   The script stops with a message naming any heading it can't place.
 3. Run the build script and commit both the raw file and the new data file.
 
 ## Your data

@@ -168,7 +168,7 @@ details.limits[open] summary{margin-bottom:8px}
       <h1>FoxPaths</h1>
       <p>Plan a whole day of stops around the bus · Peterborough, ON</p>
     </div>
-    <span class="demo-pill">Routes 3 and 6 only · times between main stops are estimates</span>
+    <span class="demo-pill">Routes 2, 3, 5 and 6 · times between main stops are estimates</span>
   </header>
 
   <div class="tabs" role="tablist">
@@ -182,7 +182,7 @@ details.limits[open] summary{margin-bottom:8px}
   </div>
 
   <footer class="foot">
-    <p>Route lines, bus stops and Route 3 Park and Route 6 Sherbrooke timetables come from the City of Peterborough's route map and schedule pages (2024 routes, as published in October 2026). The timetables list times only at main stops; times at the stops in between are estimated by spacing them evenly by distance. Other routes are drawn on the map but can't be used for trips yet.</p>
+    <p>Route lines, bus stops and the timetables for Route 2 Chemong, Route 3 Park, Route 5 The Parkway and Route 6 Sherbrooke come from the City of Peterborough's route map and schedule pages (2024 routes, as published in October 2026). The timetables list times only at main stops; times at the stops in between are estimated by spacing them evenly by distance. Other routes are drawn on the map but can't be used for trips yet.</p>
     <p>Walking times are straight-line distance with a detour allowance at about 4.8 km/h, so real walks may differ. Always check the official schedule before you travel.</p>
     <p>Google Maps buttons open one leg at a time, because Google Maps doesn't support multi-stop trips by transit. Google shows its own live bus options, which may differ from this plan.</p>
   </footer>
@@ -227,7 +227,7 @@ function buildNet(day){
       pat.stops.forEach((sid,k)=>{if(times[k]!=null){seqIds.push(idx[sid]);seqT.push(times[k]);}});
       if(seqIds.length<2)return;
       const tid=trips.length;
-      trips.push({r,dir:pat.dir,ids:seqIds,times:seqT,head:stops[seqIds[seqIds.length-1]].n});
+      trips.push({r,dir:pat.dir,ids:seqIds,times:seqT,label:pat.label||null,head:stops[seqIds[seqIds.length-1]].n});
       for(let k=0;k<seqIds.length-1;k++)conns.push({trip:tid,from:seqIds[k],to:seqIds[k+1],dep:seqT[k],arr:seqT[k+1],seq:k});
     });
   });
@@ -274,7 +274,7 @@ function makeRouter(o){
     while(guard++<60){
       const p=ptr[s];
       if(p.k==='o'){segs.push({k:'o',s,w:p.w});break;}
-      if(p.k==='t'){const ce=C[p.e],cx=C[p.x];segs.push({k:'ride',trip:ce.trip,from:ce.from,to:cx.to,dep:ce.dep,arr:cx.arr,n:cx.seq-ce.seq+1});s=ce.from;}
+      if(p.k==='t'){const ce=C[p.e],cx=C[p.x];segs.push({k:'ride',trip:ce.trip,from:ce.from,to:cx.to,dep:ce.dep,arr:cx.arr,n:cx.seq-ce.seq+1,a:ce.seq,b:cx.seq+1});s=ce.from;}
       else{segs.push({k:'foot',from:p.from,to:s,w:p.w});s=p.from;}
     }
     segs.reverse();
@@ -285,7 +285,7 @@ function makeRouter(o){
     for(const sg of segs.slice(1)){
       if(sg.k==='ride'){
         if(sg.dep>cur){steps.push({k:'wait',at:sg.from,t0:cur,t1:sg.dep});wait+=sg.dep-cur;}
-        steps.push({k:'ride',trip:sg.trip,from:sg.from,to:sg.to,t0:sg.dep,t1:sg.arr,n:sg.n});rides++;cur=sg.arr;
+        steps.push({k:'ride',trip:sg.trip,from:sg.from,to:sg.to,t0:sg.dep,t1:sg.arr,n:sg.n,a:sg.a,b:sg.b});rides++;cur=sg.arr;
       }else{steps.push({k:'walk',from:{s:sg.from},to:{s:sg.to},t0:cur,t1:cur+sg.w,w:sg.w});walk+=sg.w;cur+=sg.w;}
     }
     const wE=dw[bestStop];
@@ -435,7 +435,7 @@ function solve(inp){
     if(bestEnd>inp.end.to)reasons.push(`With these minimum times, the earliest you could arrive at ${placeById[inp.end.place].n} is ${fmt(bestEnd)}, after your ${fmt(inp.end.to)} limit. Leave earlier, shorten a stop, or push the arrival window later.`);
     else reasons.push(`A day fits, but not with arrival between ${fmt(inp.end.from)} and ${fmt(inp.end.to)}. Try widening the arrival window.`);
   }else if(!far.length){
-    reasons.push('No Route 3 or Route 6 trips link these places at those times. Only those two routes have timetables so far. Try a longer max walk, or check the time limits on each stop.');
+    reasons.push(`No bus trips link these places at those times. Only Routes ${ROUTES.map(r=>r.id).join(', ')} have timetables so far. Try a longer max walk, or check the time limits on each stop.`);
   }
   return {ok:false,reasons};
 }
@@ -606,7 +606,7 @@ function planRows(plan,inp){
       if(st.k==='walk'&&st.w>0)rows.push({k:'walk',t:st.t0,main:`Walk ${st.w} min to ${esc(nm(st.to))}`});
       else if(st.k==='wait')rows.push({k:'wait',t:st.t0,main:`Wait ${fmtDur(st.t1-st.t0)} at ${esc(NET.stops[st.at].n)}`,sub:`Bus leaves at ${fmt(st.t1)}`});
       else if(st.k==='ride'){const tr=NET.trips[st.trip];
-        rows.push({k:'ride',t:st.t0,rc:tr.r.c,main:`<span class="route" style="--rc:${tr.r.c}">${tr.r.id}</span>${esc(tr.r.name)} toward ${esc(tr.head)}`,
+        rows.push({k:'ride',t:st.t0,rc:tr.r.c,main:`<span class="route" style="--rc:${tr.r.c}">${tr.r.id}</span>${esc(tr.r.name)} ${tr.label?esc(tr.label.charAt(0).toLowerCase()+tr.label.slice(1)):'toward '+esc(tr.head)}`,
           sub:`Board at ${esc(NET.stops[st.from].n)} · get off at ${esc(NET.stops[st.to].n)}, ${fmt(st.t1)} · ${fmtDur(st.t1-st.t0)}, ${st.n} stop${st.n>1?'s':''}`+((!TIMED_IDS.has(NET.stops[st.from].id)||!TIMED_IDS.has(NET.stops[st.to].id))?' · estimated, not a timed stop':'')});}
     }
     if(k<n){
@@ -681,7 +681,7 @@ function mapHTML(plan){
   const used=new Set();
   if(plan){
     plan.legs.forEach(leg=>leg.op.steps.forEach(st=>{
-      if(st.k==='ride'){const tr=NET.trips[st.trip];const a=tr.ids.indexOf(st.from),b=tr.ids.indexOf(st.to);
+      if(st.k==='ride'){const tr=NET.trips[st.trip];const a=st.a??tr.ids.indexOf(st.from),b=st.b??tr.ids.indexOf(st.to);
         const seg=tr.ids.slice(a,b+1).map(i=>NET.stops[i]);seg.forEach(s=>used.add(s.i));
         g+=`<polyline points="${pts(seg)}" fill="none" stroke="${tr.r.c}" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>`;}
       else if(st.k==='walk'&&st.w>0){const a=st.from.p?placeById[st.from.p]:NET.stops[st.from.s],b=st.to.p?placeById[st.to.p]:NET.stops[st.to.s];
