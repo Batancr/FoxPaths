@@ -22,6 +22,8 @@ Newmarket and Waterloo, Ontario.
   tells you how much longer you can stay where you are ("you have 18 min more at the library")
 - **A place to eat on your way**: FoxPaths loads restaurants, cafés and fast food from OpenStreetMap (through the
   Overpass API, cached for a week in your browser) and picks the one with the smallest detour that fits your buses
+- **Changing buses**: allow bus changes, at most one, or none (one bus per trip, walking further to it instead).
+  Under More options, or say "no transfers" or "one bus only" in Type your day
 - **Which side of the street**: for every bus, which way it's heading, which side of the street to wait on (buses
   drive on the right, so the stop is on the right-hand side of travel), and a Street View link to the stop. For the
   ION light rail it names the platform direction instead

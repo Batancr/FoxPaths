@@ -171,13 +171,17 @@
     places.forEach(p => { p._d = home ? Math.hypot(p.x - home.x, p.y - home.y) : 0; });
     const cats = ctx.cats || {};
     const now = ctx.now || new Date();
-    const out = { start: null, end: null, day: null, reorder: null, goalLabel: null, leaveNow: false, acts: [], ignored: [] };
+    const out = { start: null, end: null, day: null, reorder: null, goalLabel: null, leaveNow: false, maxRides: 0, acts: [], ignored: [] };
 
     let s = ' ' + String(text || '').toLowerCase().replace(/[–—]/g, '-').replace(/\s+/g, ' ') + ' ';
     // whole-sentence options
     if (/\b(?:any order|in any order|order doesn'?t matter|flexible order|whatever order)\b/.test(s)) {
       out.reorder = true; s = s.replace(/\b(?:in )?any order\b|\border doesn'?t matter\b|\bflexible order\b|\bwhatever order\b/g, ' ');
     }
+    const NOCHANGE = /\b(?:no (?:bus )?(?:transfers?|changes?|switching)|without (?:transfers?|changing(?: buses)?)|one bus only|only one bus|single bus|direct bus(?:es)?(?: only)?|don'?t (?:want to )?(?:transfer|change buses|switch buses))\b/;
+    const ONECHANGE = /\b(?:at most|max(?:imum)?|no more than|up to) (?:one|1) (?:transfer|change|bus change)\b/;
+    if (ONECHANGE.test(s)) { out.maxRides = 2; s = s.replace(ONECHANGE, ' '); }
+    else if (NOCHANGE.test(s)) { out.maxRides = 1; s = s.replace(new RegExp(NOCHANGE.source, 'g'), ' '); }
     if (/\b(?:right now|now|whenever|no rush|don'?t care when|any ?time|asap)\b/.test(s)) {
       out.leaveNow = true; s = s.replace(/\b(?:right now|now|whenever|no rush|i don'?t care when(?: i leave)?|don'?t care when(?: i leave)?|any ?time|asap)\b/g, ' ');
     }

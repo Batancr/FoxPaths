@@ -353,6 +353,46 @@ function makeRouter(o){
       else{segs.push({k:'foot',from:p.from,to:s,w:p.w});s=p.from;}
     }
     segs.reverse();
+    return fromSegs(A,B,segs,bestStop,dw[bestStop]);
+  }
+  // Same search, but limited to K bus rides per trip (K=1: one bus, no changes). Keeps the earliest arrival
+  // separately for each number of rides used, so a slower trip with fewer changes isn't thrown away.
+  function queryK(A,B,t,K){
+    const N=NET.stops.length,C=NET.conns,T=NET.trips.length;
+    const orig=near(A),dest=near(B);
+    if(!orig.length||!dest.length)return null;
+    const arrive=[],board=[],ptr=[];
+    for(let k=0;k<=K;k++){arrive.push(new Float64Array(N).fill(Infinity));board.push(new Float64Array(N).fill(Infinity));ptr.push(new Array(N).fill(null));}
+    const dw=new Array(N).fill(-1);dest.forEach(d=>dw[d.s]=d.w);
+    orig.forEach(({s,w})=>{arrive[0][s]=t+w;board[0][s]=t+w+o.buffer;ptr[0][s]={k:'o',w};});
+    const enter=new Int32Array(T).fill(-1),enterK=new Int8Array(T).fill(99);
+    let best=Infinity,bestStop=-1,bestK=-1;
+    const reach=(k,s,a,p)=>{
+      if(a<arrive[k][s]){arrive[k][s]=a;ptr[k][s]=p;board[k][s]=Math.min(board[k][s],a+1);
+        if(p.k==='t'&&dw[s]>=0&&a+dw[s]<best){best=a+dw[s];bestStop=s;bestK=k;}return true;}
+      return false;
+    };
+    for(let i=lowerBound(C,t,c=>c.dep);i<C.length;i++){
+      const c=C[i];if(c.dep>=best)break;
+      for(let k=0;k<K&&k<enterK[c.trip];k++){if(board[k][c.from]<=c.dep){enter[c.trip]=i;enterK[c.trip]=k;break;}}
+      if(enter[c.trip]<0)continue;
+      const kk=enterK[c.trip]+1;
+      if(reach(kk,c.to,c.arr,{k:'t',e:enter[c.trip],x:i,pk:enterK[c.trip]})){
+        for(const f of NET.foot[c.to])reach(kk,f.s,c.arr+f.w,{k:'f',from:c.to,w:f.w,pk:kk});
+      }
+    }
+    if(bestStop<0)return null;
+    const segs=[];let s=bestStop,k=bestK,guard=0;
+    while(guard++<60){
+      const p=ptr[k][s];
+      if(p.k==='o'){segs.push({k:'o',s,w:p.w});break;}
+      if(p.k==='t'){const ce=C[p.e],cx=C[p.x];segs.push({k:'ride',trip:ce.trip,from:ce.from,to:cx.to,dep:ce.dep,arr:cx.arr,n:cx.seq-ce.seq+1,a:ce.seq,b:cx.seq+1});s=ce.from;k=p.pk;}
+      else{segs.push({k:'foot',from:p.from,to:s,w:p.w});s=p.from;k=p.pk;}
+    }
+    segs.reverse();
+    return fromSegs(A,B,segs,bestStop,dw[bestStop]);
+  }
+  function fromSegs(A,B,segs,bestStop,wE){
     const first=segs.find(x=>x.k==='ride');if(!first||segs[0].k!=='o')return null;
     const w0=segs[0].w,leave=first.dep-o.buffer-w0;
     const steps=[];let cur=leave,wait=0,walk=0,rides=0;
@@ -363,7 +403,6 @@ function makeRouter(o){
         steps.push({k:'ride',trip:sg.trip,from:sg.from,to:sg.to,t0:sg.dep,t1:sg.arr,n:sg.n,a:sg.a,b:sg.b});rides++;cur=sg.arr;
       }else{steps.push({k:'walk',from:{s:sg.from},to:{s:sg.to},t0:cur,t1:cur+sg.w,w:sg.w});walk+=sg.w;cur+=sg.w;}
     }
-    const wE=dw[bestStop];
     steps.push({k:'walk',from:{s:bestStop},to:{p:B.id},t0:cur,t1:cur+wE,w:wE});walk+=wE;cur+=wE;
     return {leave,arr:cur,steps,wait,walk,rides};
   }
@@ -372,7 +411,7 @@ function makeRouter(o){
     const key=A.id+'>'+B.id;if(profCache.has(key))return profCache.get(key);
     const out=[];let t=300;
     while(t<1440){
-      const j=query(A,B,t);if(!j)break;
+      const j=o.maxRides?queryK(A,B,t,o.maxRides):query(A,B,t);if(!j)break;
       while(out.length&&out[out.length-1].arr>=j.arr)out.pop();
       out.push(j);t=j.leave+1;
     }
@@ -518,6 +557,7 @@ function solve(inp){
   const placeIds=[inp.start.place,inp.end.place,...inp.acts.flatMap(a=>a.place.startsWith('any:')?PLACES.filter(p=>p.cat===a.place.slice(4)).map(p=>p.id):[a.place])];
   const far=[...new Set(placeIds)].map(id=>placeById[id]).filter(p=>!R.near(p).length);
   const dayName={weekday:'weekdays',saturday:'Saturdays',sunday:'Sundays and holidays'}[inp.day];
+  if(inp.maxRides)reasons.push(inp.maxRides===1?'You asked for no bus changes, so only trips you can make on a single bus count. Allow one change, or raise the max walk to a stop so FoxPaths can walk you to a bus that goes straight there.':'You asked for at most one bus change. Allowing more changes may find a plan.');
   if(far.length)reasons.push(`On ${dayName}, no stop with bus service is within ${inp.maxWalk} min walk of ${far.map(p=>p.n).join(' or ')}. Raise the max walk to a stop, pick another day, or choose a different place.`);
   const relaxed=searchDays({...inp,goal:'early'},R,0,1440+240);
   if(relaxed.leaves.length){
@@ -675,6 +715,8 @@ function renderSetup(){
     <details class="block more"${s.moreOpen?' open':''}>
       <summary><h2>More options</h2></summary>
       <label class="field"><span>Optimize for</span><select id="goal">${goalOptions()}</select></label>
+      <label class="field"><span>Changing buses between two places</span><select id="rides">${[['any','Allow changing buses'],['2','At most one change'],['1','No changes: one bus per trip']].map(([v,l])=>`<option value="${v}"${(s.rides||'any')===v?' selected':''}>${l}</option>`).join('')}</select></label>
+      <p class="hint" id="rides-hint"${(s.rides||'any')==='any'?' hidden':''}>FoxPaths will walk you further to a single bus instead, up to your max walk to a stop. Raise that if no plan fits.</p>
       <div class="row2">
         <label class="field"><span>Max walk to a stop (min)</span><input type="number" min="1" max="30" id="maxWalk" value="${esc(s.maxWalk)}"></label>
         <label class="field"><span>Be at the stop early (min)</span><input type="number" min="0" max="15" id="buffer" value="${esc(s.buffer)}"></label>
@@ -704,6 +746,7 @@ function readSetup(){
   state.day=v('day')||state.day;
   state.addr={home:v('addr-home'),work:v('addr-work')};
   state.goal=v('goal')||state.goal;
+  state.rides=v('rides')||state.rides||'any';
   state.quick=v('quick');
   state.moreOpen=!!document.querySelector('details.more')?.open;
   state.maxWalk=num('maxWalk',8);state.buffer=num('buffer',2);state.walkDirect=num('walkDirect',12);
@@ -716,7 +759,7 @@ function toInput(){
     end:state.end.flex?{place:state.end.place,from:0,to:1440+180}:{place:state.end.place,from:T(state.end.from)??0,to:T(state.end.to)??1439},
     acts:state.acts.map((a,i)=>{const mn=Math.max(0,parseFloat(a.min)||0);let mx=parseFloat(a.max);mx=Number.isFinite(mx)&&mx>=mn?mx:null;
       return {id:a.id,label:a.label||'Stop '+(i+1),place:a.place,min:mn,max:mx,after:T(a.after),by:T(a.by)};}),
-    day:state.day,reorder:state.reorder,maxWalk:Math.max(1,state.maxWalk),buffer:Math.max(0,state.buffer),walkDirect:Math.max(0,state.walkDirect),goal:state.goal
+    maxRides:state.rides==='1'?1:state.rides==='2'?2:0,day:state.day,reorder:state.reorder,maxWalk:Math.max(1,state.maxWalk),buffer:Math.max(0,state.buffer),walkDirect:Math.max(0,state.walkDirect),goal:state.goal
   };
 }
 function leaveNow(){
@@ -816,7 +859,7 @@ function optionCard(pick,i,inp){
   return `<button class="opt" data-opt="${i}" aria-pressed="${i===selected}">
     <span class="tag">${esc(pick.tag)}</span>
     <span class="span">${fmt(p.start)} → ${fmt(p.end)}</span>
-    ${p.start-inp.start.from>=3?`<span class="picked">Stay ${fmtDur(p.start-inp.start.from)} more before you leave</span>`:''}
+    ${p.start-inp.start.from>=10?`<span class="picked">Stay ${fmtDur(p.start-inp.start.from)} more before you leave</span>`:''}
     <dl>${actRows}<dt>Waiting</dt><dd>${fmtDur(p.wait)}</dd><dt>Walking</dt><dd>${fmtDur(p.walk)}</dd><dt>Bus changes</dt><dd>${p.transfers}</dd></dl>
     ${order}${picked.length?`<div class="picked">App picked: ${picked.join(', ')}</div>`:''}
   </button>`;
@@ -930,7 +973,7 @@ $('#setup').addEventListener('change',e=>{
   if(e.target.closest('.ac')||e.target.id==='quick')return;
   readSetup();
   if(e.target.id==='endflex'&&state.end.flex){state.goal='smooth';}
-  if(e.target.id==='reorder'||e.target.id==='endflex'){save();renderSetup();}
+  if(e.target.id==='reorder'||e.target.id==='endflex'||e.target.id==='rides'){save();renderSetup();}
   schedulePlan(150);
 });
 $('#setup').addEventListener('click',e=>{
@@ -992,6 +1035,7 @@ async function applyQuick(){
   const notes=[];
   if(r.day)state.day=r.day;
   if(r.reorder!=null)state.reorder=r.reorder;
+  if(r.maxRides){state.rides=String(r.maxRides);state.moreOpen=true;}
   if(r.start){if(r.start.place)state.start.place=r.start.place;if(r.start.from){state.start.from=r.start.from;state.start.to=r.start.to;}}
   if(r.leaveNow){leaveNow();if(!r.start||!r.start.place)state.start.place=state.start.place||'home';}
   if(r.end){if(r.end.place)state.end.place=r.end.place;if(r.end.from){state.end.from=r.end.from;state.end.to=r.end.to;}state.end.flex=!!r.end.flex;}
