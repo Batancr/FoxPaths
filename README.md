@@ -2,8 +2,8 @@
 
 A day planner for people who get around by bus. You list the places you need to be and how long you need at each
 (eat for 20 to 30 minutes, study for at least 3 hours, be home between 6 and 7 pm), and FoxPaths works out the buses,
-walks and waits that make the day fit. It runs entirely in the browser, and currently covers Peterborough and
-Newmarket, Ontario.
+walks and waits that make the day fit. It runs entirely in the browser, and currently covers Peterborough,
+Newmarket and Waterloo, Ontario.
 
 - **Plans around real timetables**: compares every workable combination of buses and gives you two or three
   different plans, such as the most time at a chosen stop, the least waiting or the least walking
@@ -54,11 +54,22 @@ Contains public transit information made available under
 [YRT's Open Data Licence](https://www.yrt.ca/en/about-us/open-data-licence-agreement.aspx). FoxPaths is not affiliated
 with or endorsed by YRT.
 
+### Waterloo, Ontario
+
+Waterloo and Kitchener: every Grand River Transit bus route that serves them, including the iXpress routes, plus the ION
+light rail, with exact times at every stop. Cambridge is left out to keep the data file small. The data comes from GRT's
+published GTFS schedule (`data/raw/grt/`), as copied by [Transitous](https://transitous.org), which splits buses and
+the ION into two files. The bus schedule covers September 30 to December 20, 2026.
+
+Contains information provided by the Regional Municipality of Waterloo under licence. FoxPaths is not affiliated with
+or endorsed by GRT or the Region of Waterloo.
+
 ## Rebuilding the data
 
 ```
 python3 tools/build_peterborough.py
 python3 tools/build_newmarket.py
+python3 tools/build_waterloo.py
 ```
 
 Each script writes its city's file in `docs/data/`, which the site loads.
@@ -72,6 +83,10 @@ Each script writes its city's file in `docs/data/`, which the site loads.
 
 **Refreshing Newmarket** when YRT publishes a new schedule: download https://www.yrt.ca/google/google_transit.zip into
 `data/raw/yrt/`, run `tools/build_newmarket.py`, and commit.
+
+**Refreshing Waterloo:** download GRT's file from https://webapps.regionofwaterloo.ca/api/grt-routes/ ("Bus + LRT
+Combined"), or both Grand-River-Transit files from https://api.transitous.org/gtfs/, into `data/raw/grt/`, adjust the
+file list at the top of `tools/build_waterloo.py` if the names differ, and run it.
 
 **Adding a city that publishes GTFS:** copy `tools/build_newmarket.py`, set the area, places and defaults, and add the
 city to `CITY_LIST` in `docs/index.html`. `tools/gtfs_city.py` does the rest.

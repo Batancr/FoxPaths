@@ -216,6 +216,7 @@ details.limits[open] summary{margin-bottom:8px}
 const CITY_LIST=[
   {id:'peterborough',name:'Peterborough',file:'data/peterborough.js'},
   {id:'newmarket',name:'Newmarket',file:'data/newmarket.js'},
+  {id:'waterloo',name:'Waterloo',file:'data/waterloo.js'},
 ];
 let BUNDLE,LON0,LAT0,KX,KY,PLACES,CATS,ROUTES,TIMED_IDS,placeById,NET;
 function setCity(id){
@@ -746,7 +747,8 @@ function mapHTML(plan){
         const [x1,y1]=P(a.x,a.y),[x2,y2]=P(b.x,b.y);g+=`<line class="m-walk" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;}
     }));
   }
-  NET.stops.forEach(s=>{const [x,y]=P(s.x,s.y);g+=`<circle class="m-stop" cx="${x}" cy="${y}" r="${used.has(s.i)?4:2.2}"><title>${esc(s.n)}</title></circle>`;});
+  const busy=NET.stops.length>400; // big cities: show only the stops this plan uses
+  NET.stops.forEach(s=>{if(busy&&!used.has(s.i))return;const [x,y]=P(s.x,s.y);g+=`<circle class="m-stop" cx="${x}" cy="${y}" r="${used.has(s.i)?4:2.2}"><title>${esc(s.n)}</title></circle>`;});
   const pins=new Map();
   if(plan){
     pins.set(result.inp.start.place,['S']);

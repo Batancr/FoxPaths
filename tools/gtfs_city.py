@@ -66,38 +66,52 @@ def simplify(pts, tol):
     return [a, b]
 
 
-def build(city, gtfs_path, bbox, places, today=None, keep_route=None, route_label=None, stop_label=None, line_tol=0.02):
+def build(city, gtfs_paths, bbox, places, today=None, keep_route=None, route_label=None, stop_label=None, line_tol=0.02):
     """city: dict with id, name, cats, defaults, info (same keys as the Peterborough builder).
+    gtfs_paths: one GTFS zip, or a list of them (for agencies that publish buses and rail separately).
     bbox: (min_lon, min_lat, max_lon, max_lat) of the area to keep.
     places: [(id, name, subtitle, lon, lat, category, Google Maps search text)].
     keep_route(short_name, long_name) -> bool: optional filter (default: every route that serves the area).
     route_label(short_name, long_name) -> (badge, name): optional display names."""
     label = route_label or (lambda short, long: (short, long or short))
     today = today or dt.date.today()
-    z = zipfile.ZipFile(gtfs_path)
+    paths = [gtfs_paths] if isinstance(gtfs_paths, str) else list(gtfs_paths)
     lon0 = (bbox[0] + bbox[2]) / 2; lat0 = (bbox[1] + bbox[3]) / 2
     kx = math.cos(math.radians(lat0)) * 111.32; ky = 110.57
     xy = lambda lon, lat: [round((lon - lon0) * kx, 3), round((lat - lat0) * ky, 3)]
     inside = lambda lon, lat: bbox[0] <= lon <= bbox[2] and bbox[1] <= lat <= bbox[3]
 
-    stops = {r['stop_id']: r for r in read(z, 'stops.txt')}
+    # read every feed; with several feeds, ids get a feed prefix so they can't collide
+    zips = [zipfile.ZipFile(p) for p in paths]
+    pre = (lambda i, v: v) if len(zips) == 1 else (lambda i, v: f'{i}:{v}' if v else v)
+    def fix(rows, i, *keys):
+        for r in rows:
+            for k in keys:
+                if k in r: r[k] = pre(i, r[k])
+        return rows
+    stops, routes, trips, cal, cal_dates = {}, {}, {}, [], []
+    for i, z in enumerate(zips):
+        stops.update({r['stop_id']: r for r in fix(read(z, 'stops.txt'), i, 'stop_id')})
+        routes.update({r['route_id']: r for r in fix(read(z, 'routes.txt'), i, 'route_id')})
+        trips.update({r['trip_id']: r for r in fix(read(z, 'trips.txt'), i, 'trip_id', 'route_id', 'service_id', 'shape_id')})
+        cal += fix(read(z, 'calendar.txt'), i, 'service_id')
+        cal_dates += fix(read(z, 'calendar_dates.txt'), i, 'service_id')
     area = {sid for sid, r in stops.items() if r.get('stop_lat') and inside(float(r['stop_lon']), float(r['stop_lat']))}
-    routes = {r['route_id']: r for r in read(z, 'routes.txt')}
-    trips = {r['trip_id']: r for r in read(z, 'trips.txt')}
-    cal, cal_dates = read(z, 'calendar.txt'), read(z, 'calendar_dates.txt')
     dates = service_dates(cal, cal_dates, today)
     services = {day: active_services(cal, cal_dates, d) for day, d in dates.items()}
     wanted_services = set().union(*services.values()) if services else set()
 
     # stop times for trips on the chosen days, kept only inside the area
     st = defaultdict(list)
-    with z.open('stop_times.txt') as f:
-        for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8-sig')):
-            t = trips.get(r['trip_id'])
-            if not t or t['service_id'] not in wanted_services or r['stop_id'] not in area: continue
-            tm = r['departure_time'] or r['arrival_time']
-            if not tm: continue
-            st[r['trip_id']].append((int(r['stop_sequence']), r['stop_id'], to_min(tm)))
+    for i, z in enumerate(zips):
+        with z.open('stop_times.txt') as f:
+            for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8-sig')):
+                tid, sid = pre(i, r['trip_id']), pre(i, r['stop_id'])
+                t = trips.get(tid)
+                if not t or t['service_id'] not in wanted_services or sid not in area: continue
+                tm = r['departure_time'] or r['arrival_time']
+                if not tm: continue
+                st[tid].append((int(r['stop_sequence']), sid, to_min(tm)))
 
     patterns = {}
     used_routes = set()
@@ -112,8 +126,10 @@ def build(city, gtfs_path, bbox, places, today=None, keep_route=None, route_labe
         for day, svc in services.items():
             if t['service_id'] not in svc: continue
             key = (short, t.get('direction_id', ''), day, seq)
+            head = (t.get('trip_headsign') or '').strip()
+            if head.startswith(short_raw + ' '): head = head[len(short_raw) + 1:]  # "301 Fairway" -> "Fairway"
             p = patterns.setdefault(key, {'route': short, 'dir': t.get('direction_id', '') or '0', 'day': day, 'stops': list(seq),
-                                          'timed': [], 'trips': [], 'label': ('toward ' + t['trip_headsign']) if t.get('trip_headsign') else None})
+                                          'timed': [], 'trips': [], 'label': ('toward ' + head) if head else None})
             p['trips'].append(times)
             used_routes.add(t['route_id'])
     for p in patterns.values(): p['trips'].sort(key=lambda x: x[0])
@@ -121,7 +137,11 @@ def build(city, gtfs_path, bbox, places, today=None, keep_route=None, route_labe
     used_stops = sorted({s for p in plist for s in p['stops']})
 
     route_out = {}
-    for i, rid in enumerate(sorted(used_routes, key=lambda r: (routes[r].get('route_short_name') or r))):
+    def natural(rid):  # 1, 3, 10 ... then named routes
+        badge = label(routes[rid].get('route_short_name') or rid, routes[rid].get('route_long_name', ''))[0]
+        digits = ''.join(ch for ch in badge if ch.isdigit())
+        return (0, int(digits), badge) if badge[:1].isdigit() else (1, 0, badge)
+    for i, rid in enumerate(sorted(used_routes, key=natural)):
         rt = routes[rid]; short, name = label(rt.get('route_short_name') or rid, rt.get('route_long_name', ''))
         color = rt.get('route_color') or ''
         route_out[short] = {'id': short, 'name': name,
@@ -134,9 +154,10 @@ def build(city, gtfs_path, bbox, places, today=None, keep_route=None, route_labe
         rt = routes[t['route_id']]; short = label(rt.get('route_short_name') or t['route_id'], rt.get('route_long_name', ''))[0]
         if t['route_id'] in used_routes and t.get('shape_id'): shape_route.setdefault(t['shape_id'], short)
     shapes = defaultdict(list)
-    for r in read(z, 'shapes.txt'):
-        if r['shape_id'] in shape_route:
-            shapes[r['shape_id']].append((int(r['shape_pt_sequence']), float(r['shape_pt_lon']), float(r['shape_pt_lat'])))
+    for i, z in enumerate(zips):
+        for r in fix(read(z, 'shapes.txt'), i, 'shape_id'):
+            if r['shape_id'] in shape_route:
+                shapes[r['shape_id']].append((int(r['shape_pt_sequence']), float(r['shape_pt_lon']), float(r['shape_pt_lat'])))
     seen = set()
     for sid, pts in shapes.items():
         pts.sort(); run = []
