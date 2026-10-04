@@ -1,4 +1,4 @@
-"""Build FoxPath's Peterborough data file from the City of Peterborough source files in data/raw.
+"""Build FoxPaths' Peterborough data file from the City of Peterborough source files in data/raw.
 
 Run from the repository root:  python3 tools/build_data.py
 Writes docs/data/peterborough.js, which the site loads.
