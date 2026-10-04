@@ -70,7 +70,7 @@ def build(city, gtfs_paths, bbox, places, today=None, keep_route=None, route_lab
     """city: dict with id, name, cats, defaults, info (same keys as the Peterborough builder).
     gtfs_paths: one GTFS zip, or a list of them (for agencies that publish buses and rail separately).
     bbox: (min_lon, min_lat, max_lon, max_lat) of the area to keep.
-    places: [(id, name, subtitle, lon, lat, category, Google Maps search text)].
+    places: [(id, name, subtitle, lon, lat, category, Google Maps search text[, aliases for the day reader])].
     keep_route(short_name, long_name) -> bool: optional filter (default: every route that serves the area).
     route_label(short_name, long_name) -> (badge, name): optional display names."""
     label = route_label or (lambda short, long: (short, long or short))
@@ -144,7 +144,7 @@ def build(city, gtfs_paths, bbox, places, today=None, keep_route=None, route_lab
     for i, rid in enumerate(sorted(used_routes, key=natural)):
         rt = routes[rid]; short, name = label(rt.get('route_short_name') or rid, rt.get('route_long_name', ''))
         color = rt.get('route_color') or ''
-        route_out[short] = {'id': short, 'name': name,
+        route_out[short] = {'id': short, 'name': name, **({'mode': 'rail'} if rt.get('route_type') in ('0', '1', '2', '12') else {}),
                             'c': ('#' + color) if len(color) == 6 and color.upper() not in ('FFFFFF', '000000') else PALETTE[i % len(PALETTE)]}
 
     # route lines for the map, from shapes when the feed has them
@@ -172,7 +172,7 @@ def build(city, gtfs_paths, bbox, places, today=None, keep_route=None, route_lab
             lines.append({'r': p['route'], 'name': p['route'], 'pts': [xy(float(stops[s]['stop_lon']), float(stops[s]['stop_lat'])) for s in p['stops']]})
 
     bundle = {**city, 'exact': True,
-              'places': [{'id': i, 'n': n, 'sub': sub, 'p': xy(lon, lat), 'cat': cat, 'q': q} for i, n, sub, lon, lat, cat, q in places],
+              'places': [{'id': pl[0], 'n': pl[1], 'sub': pl[2], 'p': xy(pl[3], pl[4]), 'cat': pl[5], 'q': pl[6], **({'aliases': pl[7]} if len(pl) > 7 else {})} for pl in places],
               'stops': {s: {'n': (stop_label or str.strip)(stops[s]['stop_name']), 'p': xy(float(stops[s]['stop_lon']), float(stops[s]['stop_lat']))} for s in used_stops},
               'patterns': plist, 'lines': lines, 'routes': route_out, 'origin': [lon0, lat0], 'k': [kx, ky],
               'serviceDates': {d: v.isoformat() for d, v in dates.items()}}

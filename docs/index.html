@@ -86,6 +86,41 @@ input:focus,select:focus{border-color:var(--accent)}
 .mins{display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:end}
 details.limits summary{cursor:pointer;font-size:13px;color:var(--muted)}
 details.limits[open] summary{margin-bottom:8px}
+.quick textarea{width:100%;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font:inherit;line-height:1.45;resize:vertical}
+.quick textarea:focus{border-color:var(--accent);outline:none}
+.quick-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.quick-row .go{padding:10px 16px}
+.qout{display:grid;gap:8px;padding:10px 12px;border-radius:8px;background:var(--accent-soft)}
+.qchips{display:flex;flex-wrap:wrap;gap:6px}
+.qchip{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:13px}
+.qchip.warn{border-color:var(--signal);color:var(--signal)}
+.qnotes{margin:0;padding-left:18px;font-size:13px;display:grid;gap:3px}
+details.more>summary{cursor:pointer;list-style:none}
+details.more>summary::-webkit-details-marker{display:none}
+details.more>summary h2{display:inline}
+details.more>summary h2::after{content:" +";color:var(--muted)}
+details.more[open]>summary h2::after{content:" −"}
+.durfield{display:grid;gap:6px}
+.durfield>label{font-size:13px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 10px;font-size:13px;cursor:pointer;font-variant-numeric:tabular-nums}
+.chip:hover{border-color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.dur-note{font-size:12.5px;color:var(--muted)}
+.dur-note.bad{color:var(--danger)}
+.pick input.needs{border-color:var(--signal)}
+.ac-list li.is-cat .ac-t::before{content:"✦ ";color:var(--accent)}
+.board{display:flex;gap:10px;align-items:flex-start;margin-top:6px;padding:8px 10px;border-radius:8px;background:var(--surface-2);font-size:13px}
+.board-arrow{width:22px;height:22px;flex:none;fill:var(--rc,var(--accent));margin-top:1px}
+.board .sv{display:block;margin-top:4px;color:var(--accent);font-weight:700;text-decoration:none}
+.mbar{display:none}
+@media (max-width:899px){
+  .app.view-setup .mbar:not([hidden]){display:flex;position:fixed;left:0;right:0;bottom:0;z-index:30;gap:10px;align-items:center;justify-content:space-between;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -4px 16px rgba(0,0,0,.12)}
+  .mbar div{display:grid;min-width:0}
+  .mbar strong{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mbar .go{padding:10px 14px;font-size:14px;white-space:nowrap}
+  .app.view-setup{padding-bottom:90px}
+}
 .ac{position:relative}
 .ac>label{font-size:13px;color:var(--muted)}
 .ac-list{position:absolute;z-index:20;left:0;right:0;top:calc(100% - 18px);margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:320px;overflow:auto}
@@ -203,6 +238,7 @@ details.limits[open] summary{margin-bottom:8px}
     <section class="main" id="main" aria-label="Plans"></section>
   </div>
 
+  <div class="mbar" id="mbar" hidden></div>
   <footer class="foot">
     <p id="city-source"></p>
     <p>Walking times are straight-line distance with a detour allowance at about 4.8 km/h, so real walks may differ. Always check the official schedule before you travel.</p>
@@ -210,6 +246,7 @@ details.limits[open] summary{margin-bottom:8px}
   </footer>
 </div>
 
+<script src="dayparse.js"></script>
 <script id="engine">
 /* ================= CITIES ================= */
 // Each city's data file sets window.FOXPATH_CITIES[id]. Files load only when that city is opened.
@@ -488,7 +525,7 @@ function cityDefaults(B){
   const d=B.defaults;
   return {start:{place:'home',from:'10:00',to:'11:00'},end:{place:'home',from:'18:00',to:'19:00'},
     acts:structuredClone(d.acts),day:DAY_TODAY,reorder:false,maxWalk:d.maxWalk||10,buffer:2,walkDirect:12,
-    goal:'max:'+d.acts[d.acts.length-1].id,addr:{...d.addr}};
+    goal:'max:'+(d.acts.find(x=>x.max==='')||d.acts[0]).id,addr:{...d.addr}};
 }
 let store=null;
 try{store=JSON.parse(localStorage.getItem('foxpaths-v2'));}catch(e){}
@@ -517,15 +554,19 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function save(){store.cities[store.city]=state;try{localStorage.setItem('foxpaths-v2',JSON.stringify(store));}catch(e){}}
 
-function placeSelect(id,val,allowAny){
-  let h=`<select id="${id}">`;
-  if(allowAny){h+=`<optgroup label="Let the app pick">`+Object.entries(CATS).map(([k,v])=>`<option value="any:${k}"${val==='any:'+k?' selected':''}>${v}</option>`).join('')+`</optgroup><optgroup label="Specific place">`;}
-  const opt=p=>`<option value="${p.id}"${val===p.id?' selected':''}>${esc(p.n)}</option>`;
-  h+=PLACES.filter(p=>p.cat!=='saved').map(opt).join('');
-  if(allowAny)h+='</optgroup>';
-  const saved=PLACES.filter(p=>p.cat==='saved');
-  if(saved.length)h+=`<optgroup label="Your saved places">${saved.map(opt).join('')}</optgroup>`;
-  return h+'</select>';
+const WORK_LABEL=()=>BUNDLE.workLabel||'Work';
+const DUR_CHIPS=['15-30m','30-45m','1h','1-2h','2h+','3h+'];
+function placeName(v){
+  if(!v)return '';
+  if(v.startsWith('any:'))return CATS[v.slice(4)]||'';
+  const p=placeById[v];return p?p.n:'';
+}
+// one search box: the city's places, your saved places, "let the app pick", and address results
+function pickField(key,val,label,allowAny){
+  return `<div class="field ac pick" data-ac="${key}" data-kind="pick"${allowAny?' data-any="1"':''}>
+    <label for="addr-${key}">${label}</label>
+    <input type="text" id="addr-${key}" value="${esc(placeName(val))}" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ac-list-${key}" placeholder="Search a place, address or business"${val?'':' class="needs"'}>
+    <ul class="ac-list" id="ac-list-${key}" role="listbox" hidden></ul></div>`;
 }
 function acField(key,label,value,picked){
   const note=key==='new'?'':(picked?'On the map at the address you picked':'Pick a suggestion to put this on the planner\'s map');
@@ -534,15 +575,27 @@ function acField(key,label,value,picked){
     <ul class="ac-list" id="ac-list-${key}" role="listbox" hidden></ul>
     ${note?`<span class="ac-note${picked?' ok':''}">${note}</span>`:''}</div>`;
 }
+function durText(a){return DayParse.fmtRange(a.min,a.max);}
+function durNote(a){
+  const mn=+a.min||0,mx=a.max===''||a.max==null?null:+a.max;
+  if(!mn&&mx==null)return 'How long you need here';
+  return mx==null?`At least ${fmtDur(mn)}`:mn===mx?`About ${fmtDur(mn)}`:`${fmtDur(mn)} to ${fmtDur(mx)}`;
+}
 function goalOptions(){
   const o=state.acts.map((a,i)=>[`max:${a.id}`,`Most time at: ${a.label||'Stop '+(i+1)}`]);
   o.push(['wait','Least waiting at stops'],['walk','Least walking'],['late','Leave as late as possible'],['early','Get back as early as possible']);
   if(!o.some(x=>x[0]===state.goal))state.goal=o[0][0];
   return o.map(([v,l])=>`<option value="${v}"${v===state.goal?' selected':''}>${esc(l)}</option>`).join('');
 }
+function quickExample(){
+  const B=BUNDLE.defaults,a=B.acts.map(x=>`${x.label.toLowerCase()} at ${placeName(x.place).split(',')[0]} ${DayParse.fmtRange(x.min,x.max)}`);
+  return `leave home 10-11am, ${a.join(', ')}, home by 7pm`;
+}
 function renderSetup(){
   const s=state;
-  const acts=s.acts.map((a,i)=>`
+  const acts=s.acts.map((a,i)=>{
+    const dt=durText(a);
+    return `
     <li class="act" data-id="${a.id}">
       <div class="act-head">
         <span class="act-num" title="${s.reorder?'The app may change the order':'Stop '+(i+1)}">${s.reorder?'·':i+1}</span>
@@ -551,11 +604,12 @@ function renderSetup(){
         <button class="icon-btn" data-action="down" data-id="${a.id}" aria-label="Move down" ${i===s.acts.length-1?'disabled':''}>↓</button>
         <button class="icon-btn" data-action="remove" data-id="${a.id}" aria-label="Remove stop">✕</button>
       </div>
-      <label class="field"><span>Where</span>${placeSelect(`act-${a.id}-place`,a.place,true)}</label>
-      <div class="mins">
-        <label class="field"><span>At least (min)</span><input type="number" min="0" step="5" id="act-${a.id}-min" value="${esc(a.min)}"></label>
-        <span class="to" style="padding-bottom:10px;color:var(--muted);font-size:13px">to</span>
-        <label class="field"><span>At most (min)</span><input type="number" min="0" step="5" id="act-${a.id}-max" value="${esc(a.max)}" placeholder="No limit"></label>
+      ${pickField('act-'+a.id,a.place,'Where',true)}
+      <div class="field durfield">
+        <label for="act-${a.id}-dur">How long</label>
+        <input type="text" id="act-${a.id}-dur" value="${esc(dt)}" placeholder="e.g. 30-45m, 1h30, 3h+" autocomplete="off" spellcheck="false">
+        <div class="chips" role="group" aria-label="Quick durations">${DUR_CHIPS.map(c=>`<button type="button" class="chip" data-action="dur" data-id="${a.id}" data-v="${c}" aria-pressed="${c===dt}">${c}</button>`).join('')}</div>
+        <span class="dur-note" id="act-${a.id}-durnote">${esc(durNote(a))}</span>
       </div>
       <details class="limits"${a.after||a.by?' open':''}>
         <summary>Time limits for this stop</summary>
@@ -564,20 +618,18 @@ function renderSetup(){
           <label class="field"><span>Leave no later than</span><input type="time" step="300" id="act-${a.id}-by" value="${esc(a.by)}"></label>
         </div>
       </details>
-    </li>`).join('');
+    </li>`;}).join('');
   $('#setup').innerHTML=`
-    <div class="block">
-      <h2>Your places</h2>
-      ${acField('home','Home',s.addr.home,s.custom.home)}
-      ${acField('work','Work',s.addr.work,s.custom.work)}
-      ${acField('new','Save another place','',null)}
-      ${(s.custom.saved||[]).length?`<ul class="saved">${s.custom.saved.map(p=>`<li><div><strong>${esc(p.n)}</strong><span>${esc(p.sub)}</span></div><button class="icon-btn" data-action="unsave" data-pid="${p.id}" aria-label="Remove ${esc(p.n)}">✕</button></li>`).join('')}</ul>`:''}
-      <p class="hint">Type part of an address or a business name, like "561" or "KFC", and pick a suggestion; the closest come first. Suggestions come from <a href="https://photon.komoot.io" target="_blank" rel="noopener">Photon</a> using <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> data, so what you type is sent to that service. Your places are saved only in this browser.</p>
+    <div class="block quick">
+      <h2>Type your day</h2>
+      <textarea id="quick" rows="3" placeholder="e.g. ${esc(quickExample())}" spellcheck="false">${esc(s.quick||'')}</textarea>
+      <div class="quick-row"><button class="go" data-action="parse">Plan my day</button><span class="hint">Or set it up step by step below. Plans update as you change things.</span></div>
+      <div id="quick-out">${quickOutHTML()}</div>
     </div>
     <div class="block">
       <h2>Start</h2>
       <label class="field"><span>Day</span><select id="day">${[['weekday','Weekday (Mon to Fri)'],['saturday','Saturday'],['sunday','Sunday or holiday']].map(([v,l])=>`<option value="${v}"${s.day===v?' selected':''}>${l}</option>`).join('')}</select></label>
-      <label class="field"><span>From</span>${placeSelect('start-place',s.start.place,false)}</label>
+      ${pickField('start',s.start.place,'From',false)}
       <div class="row3">
         <label class="field"><span>Leave between</span><input type="time" step="300" id="start-from" value="${esc(s.start.from)}"></label>
         <span class="to">and</span>
@@ -592,34 +644,47 @@ function renderSetup(){
     </div>
     <div class="block">
       <h2>End</h2>
-      <label class="field"><span>Finish at</span>${placeSelect('end-place',s.end.place,false)}</label>
+      ${pickField('end',s.end.place,'Finish at',false)}
       <div class="row3">
         <label class="field"><span>Arrive between</span><input type="time" step="300" id="end-from" value="${esc(s.end.from)}"></label>
         <span class="to">and</span>
         <label class="field"><span>&nbsp;</span><input type="time" step="300" id="end-to" value="${esc(s.end.to)}" aria-label="Arrive by"></label>
       </div>
     </div>
-    <div class="block">
-      <h2>Preferences</h2>
+    <details class="block more"${s.moreOpen?' open':''}>
+      <summary><h2>More options</h2></summary>
       <label class="field"><span>Optimize for</span><select id="goal">${goalOptions()}</select></label>
       <div class="row2">
         <label class="field"><span>Max walk to a stop (min)</span><input type="number" min="1" max="30" id="maxWalk" value="${esc(s.maxWalk)}"></label>
         <label class="field"><span>Be at the stop early (min)</span><input type="number" min="0" max="15" id="buffer" value="${esc(s.buffer)}"></label>
       </div>
       <label class="field"><span>Walk instead of the bus when the walk is under (min)</span><input type="number" min="0" max="45" id="walkDirect" value="${esc(s.walkDirect)}"></label>
-    </div>
-    <button class="go" data-action="find">Find plans</button>`;
+    </details>
+    <div class="block">
+      <h2>Your places</h2>
+      ${acField('home','Home',s.addr.home,s.custom.home)}
+      ${acField('work',WORK_LABEL(),s.addr.work,s.custom.work)}
+      ${acField('new','Save another place','',null)}
+      ${(s.custom.saved||[]).length?`<ul class="saved">${s.custom.saved.map(p=>`<li><div><strong>${esc(p.n)}</strong><span>${esc(p.sub)}</span></div><button class="icon-btn" data-action="unsave" data-pid="${p.id}" aria-label="Remove ${esc(p.n)}">✕</button></li>`).join('')}</ul>`:''}
+      <p class="hint">Type part of an address or a business name, like "561" or "KFC", and pick a suggestion; the closest come first. Suggestions come from <a href="https://photon.komoot.io" target="_blank" rel="noopener">Photon</a> using <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> data, so what you type is sent to that service. Your places are saved only in this browser.</p>
+    </div>`;
 }
 function readSetup(){
   const v=id=>document.getElementById(id)?.value??'';
   const num=(id,d)=>{const x=parseFloat(v(id));return Number.isFinite(x)?x:d;};
-  state.start={place:v('start-place'),from:v('start-from'),to:v('start-to')};
-  state.end={place:v('end-place'),from:v('end-from'),to:v('end-to')};
-  state.acts=state.acts.map(a=>({id:a.id,label:v(`act-${a.id}-label`),place:v(`act-${a.id}-place`),min:v(`act-${a.id}-min`),max:v(`act-${a.id}-max`),after:v(`act-${a.id}-after`),by:v(`act-${a.id}-by`)}));
+  state.start={...state.start,from:v('start-from'),to:v('start-to')};
+  state.end={...state.end,from:v('end-from'),to:v('end-to')};
+  state.acts=state.acts.map(a=>{
+    const d=DayParse.parseDur(v(`act-${a.id}-dur`));
+    const label=v(`act-${a.id}-label`);
+    return {...a,label,auto:a.auto&&label===a.label,min:d?d.min:a.min,max:d?(d.max==null?'':d.max):a.max,after:v(`act-${a.id}-after`),by:v(`act-${a.id}-by`)};
+  });
   state.reorder=document.getElementById('reorder')?.checked||false;
   state.day=v('day')||state.day;
   state.addr={home:v('addr-home'),work:v('addr-work')};
   state.goal=v('goal')||state.goal;
+  state.quick=v('quick');
+  state.moreOpen=!!document.querySelector('details.more')?.open;
   state.maxWalk=num('maxWalk',8);state.buffer=num('buffer',2);state.walkDirect=num('walkDirect',12);
   save();
 }
@@ -633,10 +698,14 @@ function toInput(){
     day:state.day,reorder:state.reorder,maxWalk:Math.max(1,state.maxWalk),buffer:Math.max(0,state.buffer),walkDirect:Math.max(0,state.walkDirect),goal:state.goal
   };
 }
+let planTimer=null;
+function schedulePlan(delay){clearTimeout(planTimer);planTimer=setTimeout(run,delay??450);}
 function run(){
   const inp=toInput();
   const t0=performance.now();
-  if(inp.start.to<inp.start.from)result={ok:false,reasons:['The latest leave time is before the earliest one.']};
+  const missing=inp.acts.findIndex(a=>!a.place);
+  if(missing>=0||!inp.start.place||!inp.end.place)result={ok:false,reasons:[missing>=0?`Pick a place for stop ${missing+1}${inp.acts[missing].label?` (${inp.acts[missing].label})`:''}: type in its "Where" box and choose a suggestion.`:'Pick where your day starts and ends.']};
+  else if(inp.start.to<inp.start.from)result={ok:false,reasons:['The latest leave time is before the earliest one.']};
   else if(inp.end.to<inp.end.from)result={ok:false,reasons:['The latest arrival time is before the earliest one.']};
   else result=solve(inp);
   result.ms=Math.round(performance.now()-t0);result.inp=inp;selected=0;
@@ -644,6 +713,31 @@ function run(){
 }
 
 /* ---------- plan rendering ---------- */
+const COMPASS=['north','northeast','east','southeast','south','southwest','west','northwest'];
+const compass=deg=>COMPASS[Math.round(((deg%360)+360)%360/45)%8];
+function rideBearing(tr,a){
+  // direction from the boarding stop to the first stop at least ~120 m down the line
+  const s0=NET.stops[tr.ids[a]];
+  for(let k=a+1;k<tr.ids.length;k++){const s=NET.stops[tr.ids[k]];const dx=s.x-s0.x,dy=s.y-s0.y;if(Math.hypot(dx,dy)>0.12||k===tr.ids.length-1)return (Math.atan2(dx,dy)*180/Math.PI+360)%360;}
+  return null;
+}
+function boardHelp(st){
+  const tr=NET.trips[st.trip],a=st.a??tr.ids.indexOf(st.from),deg=rideBearing(tr,a);
+  if(deg==null)return '';
+  const s0=NET.stops[tr.ids[a]],[lon,lat]=cityLonLat(s0.x,s0.y);
+  // buses drive on the right, so the stop is on the right-hand side of the direction of travel
+  const side=compass(deg+90);
+  const toward=tr.label&&/^toward /.test(tr.label)?tr.label.slice(7):tr.head;
+  // Street View from the road, looking at the curb on the right-hand side, where the stop is
+  const sv=`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}&heading=${Math.round((deg+90)%360)}`;
+  const rail=tr.r.mode==='rail';
+  const say=rail
+    ?`<strong>Use the platform for trains heading ${compass(deg)}, toward ${esc(toward)}.</strong> Check the sign on the platform before you board; trains on the other side go the opposite way.`
+    :`<strong>Wait on the ${side} side of the street.</strong> The bus will be heading ${compass(deg)}, toward ${esc(toward)}. If you're on the other side, cross first: buses there go the opposite way.`;
+  return `<div class="board"><svg class="board-arrow" viewBox="0 0 24 24" aria-hidden="true" style="transform:rotate(${Math.round(deg)}deg)"><path d="M12 3l6 9h-4v9h-4v-9H6z"/></svg>
+    <div>${say}
+    <a class="sv" href="${sv}" target="_blank" rel="noopener">See this stop in Street View ↗</a></div></div>`;
+}
 function gq(p){if(p.id==='home')return state.addr.home||null;if(p.id==='work')return state.addr.work||null;return p.q;}
 function gmLink(from,to,walk){
   const a=gq(from),b=gq(to);
@@ -662,7 +756,7 @@ function planRows(plan,inp){
       if(st.k==='walk'&&st.w>0)rows.push({k:'walk',t:st.t0,main:`Walk ${st.w} min to ${esc(nm(st.to))}`});
       else if(st.k==='wait')rows.push({k:'wait',t:st.t0,main:`Wait ${fmtDur(st.t1-st.t0)} at ${esc(NET.stops[st.at].n)}`,sub:`Bus leaves at ${fmt(st.t1)}`});
       else if(st.k==='ride'){const tr=NET.trips[st.trip];
-        rows.push({k:'ride',t:st.t0,rc:tr.r.c,main:`<span class="route" style="--rc:${tr.r.c}">${tr.r.id}</span>${esc(tr.r.name)} ${tr.label?esc(tr.label.charAt(0).toLowerCase()+tr.label.slice(1)):'toward '+esc(tr.head)}`,
+        rows.push({k:'ride',t:st.t0,rc:tr.r.c,help:boardHelp(st),main:`<span class="route" style="--rc:${tr.r.c}">${tr.r.id}</span>${esc(tr.r.name)} ${tr.label?esc(tr.label.charAt(0).toLowerCase()+tr.label.slice(1)):'toward '+esc(tr.head)}`,
           sub:`Board at ${esc(NET.stops[st.from].n)} · get off at ${esc(NET.stops[st.to].n)}, ${fmt(st.t1)} · ${fmtDur(st.t1-st.t0)}, ${st.n} stop${st.n>1?'s':''}`+((TIMED_IDS&&(!TIMED_IDS.has(NET.stops[st.from].id)||!TIMED_IDS.has(NET.stops[st.to].id)))?' · estimated, not a timed stop':'')});}
     }
     if(k<n){
@@ -682,7 +776,7 @@ function rowHTML(r){
   const style=r.rc?` style="--rc:${r.rc}"`:'';
   const body=r.k==='act'
     ?`<div class="actbox"><div class="main-line">${r.main}</div><div><span class="dur">${fmtDur(r.dur)}</span> · until ${fmt(r.until)}</div><div class="sub">${r.sub}</div>${r.link||''}</div>`
-    :`<div class="main-line">${r.main}</div>${r.sub?`<div class="sub">${r.sub}</div>`:''}${r.link||''}`;
+    :`<div class="main-line">${r.main}</div>${r.sub?`<div class="sub">${r.sub}</div>`:''}${r.help||''}${r.link||''}`;
   return `<li class="k-${r.k}"${style}><time>${fmt(r.t)}</time><span class="dot" aria-hidden="true"></span><div class="body">${body}</div></li>`;
 }
 function optionCard(pick,i,inp){
@@ -699,6 +793,7 @@ function optionCard(pick,i,inp){
 }
 function renderMain(){
   const m=$('#main');
+  updateBar();
   if(!result){m.innerHTML='';return;}
   if(!result.ok){
     m.innerHTML=`<div class="status"><h2>No plan fits yet</h2></div>
@@ -776,30 +871,124 @@ function mapHTML(plan){
 function setView(v){
   const app=$('#app');app.classList.toggle('view-setup',v==='setup');app.classList.toggle('view-plans',v==='plans');
   document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===v)));
+  updateBar();
 }
 document.querySelector('.tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-view]');if(b)setView(b.dataset.view);});
+const CAT_LABEL={food:'Eat',study:'Study',shop:'Shop',groceries:'Groceries',work:'Work',health:'Appointment',transit:'Transfer',park:'Visit',school:'Class',saved:'',home:'Home'};
+function setPlace(key,val){
+  if(key==='start')state.start.place=val;
+  else if(key==='end')state.end.place=val;
+  else if(key.startsWith('act-')){
+    const a=state.acts.find(x=>'act-'+x.id===key);if(!a)return;
+    a.place=val;
+    if(!a.label||a.auto){const p=placeById[val];const lab=val.startsWith('any:')?(CAT_LABEL[val.slice(4)]||''):p?(CAT_LABEL[p.cat]||p.n.split(',')[0]):'';if(lab){a.label=lab;a.auto=true;}}
+  }
+}
 $('#setup').addEventListener('input',e=>{
+  if(e.target.closest('.ac')||e.target.id==='quick'){if(e.target.id==='quick'){state.quick=e.target.value;save();}return;}
   readSetup();
   if(e.target.id&&e.target.id.endsWith('-label')){const g=$('#goal');if(g)g.innerHTML=goalOptions();}
+  if(e.target.id&&e.target.id.endsWith('-dur')){
+    const id=e.target.id.slice(4,-4),a=state.acts.find(x=>x.id===id),d=DayParse.parseDur(e.target.value),note=$('#act-'+id+'-durnote');
+    if(note){note.textContent=d?durNote(a):(e.target.value.trim()?'Try 30m, 1h30, 30-45m or 3h+':'How long you need here');note.classList.toggle('bad',!d&&!!e.target.value.trim());}
+    document.querySelectorAll(`.chip[data-id="${id}"]`).forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.v===e.target.value.trim())));
+  }
+  schedulePlan();
 });
-$('#setup').addEventListener('change',e=>{readSetup();if(e.target.id==='reorder')renderSetup();});
+$('#setup').addEventListener('change',e=>{
+  if(e.target.closest('.ac')||e.target.id==='quick')return;
+  readSetup();if(e.target.id==='reorder')renderSetup();
+  schedulePlan(150);
+});
 $('#setup').addEventListener('click',e=>{
   const b=e.target.closest('[data-action]');if(!b)return;
   e.preventDefault();readSetup();
   const i=state.acts.findIndex(a=>a.id===b.dataset.id);
   switch(b.dataset.action){
-    case 'add':state.acts.push({id:'a'+(++nextId),label:'',place:'work',min:30,max:'',after:'',by:''});break;
+    case 'add':state.acts.push({id:'a'+(++nextId),label:'',place:'',min:30,max:60,after:'',by:'',auto:true});save();renderSetup();
+      setTimeout(()=>{const l=document.querySelectorAll('.pick input');const inp=document.getElementById('addr-act-'+state.acts[state.acts.length-1].id);if(inp)inp.focus();},0);return;
     case 'remove':state.acts.splice(i,1);break;
     case 'up':if(i>0)[state.acts[i-1],state.acts[i]]=[state.acts[i],state.acts[i-1]];break;
     case 'down':if(i<state.acts.length-1)[state.acts[i+1],state.acts[i]]=[state.acts[i],state.acts[i+1]];break;
-    case 'find':run();setView('plans');window.scrollTo({top:0,behavior:'smooth'});return;
+    case 'dur':{const d=DayParse.parseDur(b.dataset.v);if(d&&i>=0){state.acts[i].min=d.min;state.acts[i].max=d.max==null?'':d.max;}break;}
+    case 'parse':applyQuick();return;
     case 'unsave':{const id=b.dataset.pid;state.custom.saved=state.custom.saved.filter(p=>p.id!==id);
-      state.acts.forEach(a=>{if(a.place===id)a.place='home';});['start','end'].forEach(k=>{if(state[k].place===id)state[k].place='home';});
+      state.acts.forEach(a=>{if(a.place===id)a.place='';});['start','end'].forEach(k=>{if(state[k].place===id)state[k].place='home';});
       setCustomPlaces(state.custom);break;}
+    case 'see':setView('plans');window.scrollTo({top:0,behavior:'smooth'});return;
   }
-  save();renderSetup();
+  save();renderSetup();schedulePlan(100);
 });
-/* ---------- address search (Photon, OpenStreetMap data) ---------- */
+
+/* ---------- "type your day" ---------- */
+let quickInfo=null; // what the reader understood, shown under the box
+function quickOutHTML(){
+  if(!quickInfo)return '';
+  const chip=(t,cls)=>`<span class="qchip${cls?' '+cls:''}">${t}</span>`;
+  const parts=[];
+  const fmtT=s=>s?fmt(parseT(s)):'';
+  if(quickInfo.start)parts.push(chip(`Leave ${esc(placeName(state.start.place))} ${fmtT(state.start.from)}–${fmtT(state.start.to)}`));
+  state.acts.forEach((a,i)=>{
+    const where=a.place?placeName(a.place):'no place yet';
+    const lim=[a.after?'after '+fmtT(a.after):'',a.by?'done by '+fmtT(a.by):''].filter(Boolean).join(', ');
+    parts.push(chip(`${i+1}. ${esc(a.label||'Stop')} · ${esc(where)} · ${esc(durNote(a).replace(/^About /,''))}${lim?' · '+esc(lim):''}`,a.place?'':'warn'));
+  });
+  if(quickInfo.end)parts.push(chip(`${esc(placeName(state.end.place))} ${fmtT(state.end.from)}–${fmtT(state.end.to)}`));
+  const notes=[...quickInfo.notes];
+  return `<div class="qout" role="status"><span class="eyebrow">Here's what I understood</span><div class="qchips">${parts.join('')}</div>${notes.length?`<ul class="qnotes">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}<p class="hint">Not quite right? Edit the sentence and press the button again, or change anything below.</p></div>`;
+}
+async function photonFirst(q){
+  const c=acCenter(),[clon,clat]=cityLonLat(c.x,c.y);
+  const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8&lang=en&lat=${clat.toFixed(5)}&lon=${clon.toFixed(5)}`);
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const js=await r.json();
+  const found=(js.features||[]).map(f=>{const [lon,lat]=f.geometry.coordinates;return {...acLabel(f.properties||{}),lon,lat,x:(lon-LON0)*KX,y:(lat-LAT0)*KY};})
+    .filter(f=>Math.hypot(f.x,f.y)<30).sort((a,b)=>Math.hypot(a.x-c.x,a.y-c.y)-Math.hypot(b.x-c.x,b.y-c.y));
+  return found[0]||null;
+}
+function savePlace(it){
+  const id='u'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  state.custom.saved=[...(state.custom.saved||[]),{id,n:it.title,sub:it.sub||it.q,q:it.q,lon:it.lon,lat:it.lat}];
+  setCustomPlaces(state.custom);return id;
+}
+async function applyQuick(){
+  const text=($('#quick')?.value||'').trim();state.quick=text;
+  if(!text){quickInfo={notes:['Type your day first, for example: '+quickExample()]};renderSetup();return;}
+  const r=DayParse.parseDay(text,{places:PLACES,cats:CATS,now:new Date()});
+  const notes=[];
+  if(r.day)state.day=r.day;
+  if(r.reorder!=null)state.reorder=r.reorder;
+  if(r.start){if(r.start.place)state.start.place=r.start.place;if(r.start.from){state.start.from=r.start.from;state.start.to=r.start.to;}}
+  if(r.end){if(r.end.place)state.end.place=r.end.place;if(r.end.from){state.end.from=r.end.from;state.end.to=r.end.to;}}
+  if(r.acts.length){
+    state.acts=r.acts.map(a=>({id:'a'+(++nextId),label:a.label,place:a.place||'',placeText:a.placeText,min:a.min??30,max:a.min==null?60:(a.max==null?'':a.max),after:a.after||'',by:a.by||'',auto:!a.label}));
+    r.acts.forEach(a=>{if(a.min==null)notes.push(`No time given for "${a.label||a.placeText}", so I used 30m to 1h.`);});
+  }else notes.push("I couldn't find any stops in that. Try something like: "+quickExample());
+  if(r.ignored.length)notes.push('I skipped: '+r.ignored.map(x=>`"${x}"`).join(', '));
+  // goal: the stop named in "most time at …", or the open-ended stop (like "3h+")
+  const g=r.goalLabel&&state.acts.find(a=>a.label.toLowerCase().startsWith(r.goalLabel));
+  const open=state.acts.filter(a=>a.max==='').sort((x,y)=>(+y.min||0)-(+x.min||0))[0];
+  if(g)state.goal='max:'+g.id;else if(open)state.goal='max:'+open.id;else if(state.acts.length)state.goal='wait';
+  quickInfo={start:!!r.start,end:!!r.end,notes};
+  save();renderSetup();schedulePlan(50);
+  // look up places the city list doesn't have, like "tim hortons on king"
+  const look=state.acts.filter(a=>!a.place&&a.placeText);
+  if(look.length){
+    quickInfo.notes.push('Looking up '+look.map(a=>`"${a.placeText}"`).join(', ')+'…');renderSetup();
+    for(const a of look){
+      try{
+        const it=await photonFirst(a.placeText);
+        if(it){a.place=savePlace(it);notes.push(`Found "${a.placeText}": ${it.title}${it.sub?', '+it.sub:''}, the closest match. Change it in the stop's "Where" box if that's wrong.`);}
+        else notes.push(`I couldn't find "${a.placeText}" nearby. Type it into that stop's "Where" box to search.`);
+      }catch(e){notes.push(`Address search isn't reachable, so I couldn't look up "${a.placeText}". Pick a place in that stop's "Where" box.`);}
+    }
+    quickInfo.notes=notes.filter(n=>!n.startsWith('Looking up'));
+    save();renderSetup();schedulePlan(50);
+  }
+  if(window.matchMedia('(max-width: 899px)').matches)setView('plans');
+}
+
+/* ---------- search boxes (city places, saved places, Photon addresses) ---------- */
 const AC={timer:null,ctrl:null,results:{},active:{}};
 function acCenter(){const h=placeById.home;return h||{x:0,y:0};}
 function acLabel(pr){
@@ -809,19 +998,30 @@ function acLabel(pr){
   const sub=[pr.name&&street?street:'',place].filter(Boolean).join(', ');
   return {title,sub,q:[title,sub].filter(Boolean).join(', ')+(pr.state==='Ontario'?', ON':'')};
 }
+function acLocal(key,q){
+  const box=document.querySelector(`.ac[data-ac="${key}"]`),pick=box?.dataset.kind==='pick',any=box?.dataset.any;
+  const ql=q.toLowerCase(),hit=t=>!ql||t.toLowerCase().includes(ql);
+  const out=[];
+  if(pick&&any)Object.entries(CATS).forEach(([k,v])=>{if(hit(v+' any '+k))out.push({kind:'cat',value:'any:'+k,title:v,sub:'FoxPaths picks the one that fits your day best',local:true,first:true});});
+  PLACES.forEach(p=>{
+    if(!pick&&(p.cat==='saved'||p.id===key))return;
+    if(hit(p.n+' '+(p.sub||'')+' '+p.id))out.push({kind:'place',id:p.id,title:p.n,sub:p.cat==='saved'?'Saved place · '+(p.sub||''):(p.sub||''),x:p.x,y:p.y,local:true,q:p.q||p.n});
+  });
+  return out;
+}
 async function acSearch(key,q){
   const list=$('#ac-list-'+key);if(!list)return;
+  const local=acLocal(key,q);
+  if(q.length<2){acShow(key,local,'');return;}
+  acShow(key,local,'Searching addresses…');
   const c=acCenter(),[clon,clat]=cityLonLat(c.x,c.y);
-  const local=PLACES.filter(p=>p.cat!=='saved'&&p.id!==key&&(p.n+' '+(p.sub||'')).toLowerCase().includes(q.toLowerCase()))
-    .map(p=>({title:p.n,sub:p.sub||'',x:p.x,y:p.y,local:true,q:p.q||p.n}));
-  acShow(key,local,'Searching…');
   if(AC.ctrl)AC.ctrl.abort();AC.ctrl=new AbortController();
   try{
     const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=12&lang=en&lat=${clat.toFixed(5)}&lon=${clon.toFixed(5)}`,{signal:AC.ctrl.signal});
     if(!r.ok)throw new Error('HTTP '+r.status);
     const js=await r.json();
     const found=(js.features||[]).map(f=>{const [lon,lat]=f.geometry.coordinates;const L=acLabel(f.properties||{});
-      return {...L,lon,lat,x:(lon-LON0)*KX,y:(lat-LAT0)*KY};});
+      return {...L,kind:'addr',lon,lat,x:(lon-LON0)*KX,y:(lat-LAT0)*KY};});
     const near=found.filter(f=>Math.hypot(f.x,f.y)<30); // stay within about 30 km of the city
     acShow(key,[...local,...near],near.length||local.length?'':'No matches nearby. Try adding a street name.');
   }catch(e){
@@ -832,30 +1032,49 @@ async function acSearch(key,q){
 function acShow(key,items,msg){
   const list=$('#ac-list-'+key),input=$('#addr-'+key);if(!list)return;
   const c=acCenter();
-  items.forEach(i=>i.d=Math.hypot(i.x-c.x,i.y-c.y));
-  items.sort((a,b)=>(!!b.local-!!a.local)||a.d-b.d);
+  items.forEach(i=>i.d=i.x==null?0:Math.hypot(i.x-c.x,i.y-c.y));
+  items.sort((a,b)=>(!!b.first-!!a.first)||(!!b.local-!!a.local)||a.d-b.d);
   AC.results[key]=items;AC.active[key]=-1;
-  list.innerHTML=items.map((it,i)=>`<li role="option" id="ac-${key}-${i}" data-ac-pick="${key}" data-i="${i}"><span class="ac-t">${esc(it.title)}</span><span class="ac-s">${esc([it.sub,it.d<0.05?'':(it.d<1?Math.round(it.d*1000)+' m':it.d.toFixed(1)+' km')+' away'].filter(Boolean).join(' · '))}</span></li>`).join('')
+  list.innerHTML=items.map((it,i)=>`<li role="option" id="ac-${key}-${i}" data-ac-pick="${key}" data-i="${i}" class="${it.kind==='cat'?'is-cat':''}"><span class="ac-t">${esc(it.title)}</span><span class="ac-s">${esc([it.sub,it.kind==='cat'||it.d<0.05?'':(it.d<1?Math.round(it.d*1000)+' m':it.d.toFixed(1)+' km')+' away'].filter(Boolean).join(' · '))}</span></li>`).join('')
     +(msg?`<li class="ac-msg" aria-disabled="true">${esc(msg)}</li>`:'');
   const open=!!(items.length||msg);list.hidden=!open;input.setAttribute('aria-expanded',String(open));
 }
-function acClose(key){const l=$('#ac-list-'+key);if(l)l.hidden=true;const i=$('#addr-'+key);if(i)i.setAttribute('aria-expanded','false');}
+function acClose(key){
+  const l=$('#ac-list-'+key);if(l)l.hidden=true;const i=$('#addr-'+key);if(!i)return;i.setAttribute('aria-expanded','false');
+  const box=i.closest('.ac');
+  if(box&&box.dataset.kind==='pick'){ // put back the current choice if nothing was picked
+    const cur=key==='start'?state.start.place:key==='end'?state.end.place:(state.acts.find(a=>'act-'+a.id===key)||{}).place;
+    i.value=placeName(cur);i.classList.toggle('needs',!cur);
+  }
+}
 function acPick(key,i){
   const it=(AC.results[key]||[])[i];if(!it)return;
-  const [lon,lat]=it.lon!=null?[it.lon,it.lat]:cityLonLat(it.x,it.y);
-  if(key==='home'||key==='work'){state.custom[key]={lon,lat,label:it.q};state.addr[key]=it.q;}
-  else{const id='u'+Date.now().toString(36);state.custom.saved=[...(state.custom.saved||[]),{id,n:it.title,sub:it.sub||it.q,q:it.q,lon,lat}];}
-  setCustomPlaces(state.custom);save();renderSetup();run();
+  const box=document.querySelector(`.ac[data-ac="${key}"]`),pick=box?.dataset.kind==='pick';
+  if(pick){
+    const val=it.kind==='cat'?it.value:it.kind==='place'?it.id:savePlace(it);
+    setPlace(key,val);
+  }else{
+    const [lon,lat]=it.lon!=null?[it.lon,it.lat]:cityLonLat(it.x,it.y);
+    if(key==='home'||key==='work'){state.custom[key]={lon,lat,label:it.q};state.addr[key]=it.q;}
+    else savePlace({...it,lon,lat});
+    setCustomPlaces(state.custom);
+  }
+  save();renderSetup();schedulePlan(50);
 }
 $('#setup').addEventListener('input',e=>{
   const box=e.target.closest('.ac');if(!box)return;
   const key=box.dataset.ac,q=e.target.value.trim();
-  if(key!=='new'){state.custom[key]=null;setCustomPlaces(state.custom);const n=box.querySelector('.ac-note');if(n){n.textContent="Pick a suggestion to put this on the planner's map";n.classList.remove('ok');}}
+  if(key==='home'||key==='work'){state.addr[key]=e.target.value;state.custom[key]=null;setCustomPlaces(state.custom);save();const n=box.querySelector('.ac-note');if(n){n.textContent="Pick a suggestion to put this on the planner's map";n.classList.remove('ok');}}
   clearTimeout(AC.timer);
-  if(q.length<2){acClose(key);return;}
-  AC.timer=setTimeout(()=>acSearch(key,q),300);
+  if(box.dataset.kind!=='pick'&&q.length<2){acClose(key);return;}
+  AC.timer=setTimeout(()=>acSearch(key,q),q.length<2?0:300);
+});
+$('#setup').addEventListener('focusin',e=>{
+  const box=e.target.closest('.ac');if(!box||box.dataset.kind!=='pick'||e.target.tagName!=='INPUT')return;
+  e.target.select();acSearch(box.dataset.ac,'');
 });
 $('#setup').addEventListener('keydown',e=>{
+  if(e.target.id==='quick'&&e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();applyQuick();return;}
   const box=e.target.closest('.ac');if(!box)return;
   const key=box.dataset.ac,items=AC.results[key]||[],list=$('#ac-list-'+key);
   if(e.key==='Escape'){acClose(key);return;}
@@ -863,11 +1082,22 @@ $('#setup').addEventListener('keydown',e=>{
   if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();
     let a=(AC.active[key]??-1)+(e.key==='ArrowDown'?1:-1);a=(a+items.length)%items.length;AC.active[key]=a;
     list.querySelectorAll('[role=option]').forEach((li,i)=>li.setAttribute('aria-selected',String(i===a)));
+    list.querySelector(`#ac-${CSS.escape(key)}-${a}`)?.scrollIntoView({block:'nearest'});
     e.target.setAttribute('aria-activedescendant','ac-'+key+'-'+a);}
   else if(e.key==='Enter'){e.preventDefault();acPick(key,Math.max(0,AC.active[key]));}
 });
 $('#setup').addEventListener('mousedown',e=>{const li=e.target.closest('[data-ac-pick]');if(li){e.preventDefault();acPick(li.dataset.acPick,+li.dataset.i);}});
-$('#setup').addEventListener('focusout',e=>{const box=e.target.closest('.ac');if(box)setTimeout(()=>acClose(box.dataset.ac),150);});
+$('#setup').addEventListener('focusout',e=>{const box=e.target.closest('.ac');if(box)setTimeout(()=>{if(!box.contains(document.activeElement))acClose(box.dataset.ac);},150);});
+
+/* ---------- phone summary bar ---------- */
+function updateBar(){
+  const bar=$('#mbar');if(!bar)return;
+  const show=$('#app').classList.contains('view-setup')&&result;
+  bar.hidden=!show;if(!show)return;
+  bar.innerHTML=result.ok
+    ?`<div><span class="eyebrow">Best plan · ${esc(result.picks[0].tag)}</span><strong>Leave ${fmt(result.picks[0].p.start)} · back ${fmt(result.picks[0].p.end)}</strong></div><button class="go" data-bar="see">See ${result.picks.length} plan${result.picks.length>1?'s':''}</button>`
+    :`<div><span class="eyebrow">No plan fits yet</span><strong>${esc((result.reasons||[''])[0]).slice(0,90)}</strong></div><button class="go" data-bar="see">Why</button>`;
+}
 
 $('#main').addEventListener('click',e=>{const b=e.target.closest('[data-opt]');if(!b)return;selected=+b.dataset.opt;renderMain();});
 
@@ -891,10 +1121,11 @@ async function openCity(id){
   $('#main').innerHTML=`<p class="loading">Loading ${esc(c.name)} bus schedules…</p>`;
   try{await loadCityData(c);if(openId!==id)return;}
   catch(e){$('#main').innerHTML=`<div class="notice"><strong>Couldn't load ${esc(c.name)}'s schedules.</strong><span>Check your connection and reload the page.</span></div>`;return;}
-  store.city=id;setCity(id);computeMapGeom();useCityState();save();
+  store.city=id;setCity(id);computeMapGeom();useCityState();save();quickInfo=null;
   try{history.replaceState(null,'','#'+id);}catch(e){}
   renderCityChrome();renderSetup();run();
 }
+$('#mbar').addEventListener('click',e=>{if(e.target.closest('[data-bar]')){setView('plans');window.scrollTo({top:0,behavior:'smooth'});}});
 $('#cities').addEventListener('click',e=>{const b=e.target.closest('button[data-city]');if(b&&b.dataset.city!==openId)openCity(b.dataset.city);});
 $('#cities').innerHTML=CITY_LIST.map(c=>`<button data-city="${c.id}" aria-pressed="${c.id===store.city}">${esc(c.name)}</button>`).join('');
 openCity(store.city);

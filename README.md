@@ -11,6 +11,15 @@ Newmarket and Waterloo, Ontario.
   at each place
 - **Flexible days**: stops can have their own time limits, and FoxPaths can choose the order of your stops for you
 - **Google Maps hand-off**: each leg of the plan has a button that opens it in Google Maps for turn-by-turn directions
+- **Type your day**: write it the way you'd say it, like "leave home 10-11am, lunch at Uptown 30-45 min, study at UW
+  3h+, home by 7pm", and FoxPaths fills in the plan. It's a rule-based reader in `docs/dayparse.js` (no AI): it picks
+  out times, durations, day words and place names, including nicknames like "uw", and looks up places it doesn't know
+- **Search inside every stop**: each stop's "Where" box searches the city's places, your saved places and addresses
+- **Quick durations**: tap 30-45m, 1h, 3h+ and so on, or type them
+- **Live plans**: plans update as you change anything; on phones a bar at the bottom shows the best plan
+- **Which side of the street**: for every bus, which way it's heading, which side of the street to wait on (buses
+  drive on the right, so the stop is on the right-hand side of travel), and a Street View link to the stop. For the
+  ION light rail it names the platform direction instead
 - **Address search**: type part of an address or a business name and pick from suggestions, closest first. Picked
   places go on the planner's map and can be used as Home, Work or any stop
 
@@ -60,6 +69,9 @@ Waterloo and Kitchener: every Grand River Transit bus route that serves them, in
 light rail, with exact times at every stop. Cambridge is left out to keep the data file small. The data comes from GRT's
 published GTFS schedule (`data/raw/grt/`), as copied by [Transitous](https://transitous.org), which splits buses and
 the ION into two files. The bus schedule covers September 30 to December 20, 2026.
+
+Places include the University of Waterloo (shown as "School"), ICON and Society 145 student residences, and the No
+Frills on Forwell Creek Rd for groceries.
 
 Contains information provided by the Regional Municipality of Waterloo under licence. FoxPaths is not affiliated with
 or endorsed by GRT or the Region of Waterloo.

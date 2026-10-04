@@ -18,12 +18,14 @@ BBOX = (-80.62, 43.38, -80.40, 43.53)  # Waterloo and Kitchener; Cambridge is le
 
 # Locations are GRT stop or ION station positions next to each place. "Example" places are neutral stand-ins.
 PLACES = [
-    # (id, name, subtitle, lon, lat, category, Google Maps search text)
-    ('home', 'Home', 'Example: north Waterloo, near Albert and Longwood', -80.5397, 43.4903, 'home', 'Albert St and Longwood Dr, Waterloo, ON'),
-    ('work', 'Work', 'Example: downtown Kitchener, near Kitchener Market', -80.4838, 43.4464, 'work', 'Kitchener Market, Kitchener, ON'),
-    ('uw', 'University of Waterloo', 'Main campus, by the ION station', -80.5413, 43.4734, 'study', 'University of Waterloo, Waterloo, ON'),
-    ('laurier', 'Wilfrid Laurier University', 'Waterloo campus', -80.5280, 43.4753, 'study', 'Wilfrid Laurier University, Waterloo, ON'),
+    # (id, name, subtitle, lon, lat, category, Google Maps search text, aliases the day reader understands)
+    ('home', 'Home', 'Example: ICON student residence, 330 Phillip St', -80.5397, 43.4766, 'home', 'ICON, 330 Phillip Street, Waterloo, ON', ['icon', 'res', 'residence']),
+    ('work', 'University of Waterloo', 'School: main campus, by the ION station', -80.5413, 43.4734, 'study', 'University of Waterloo, Waterloo, ON',
+     ['uw', 'uwaterloo', 'waterloo', 'school', 'campus', 'class', 'classes', 'uni', 'university']),
+    ('society', 'Society 145', 'Student residence, 145 Columbia St W (approximate spot)', -80.5405, 43.4768, 'residence', 'Society 145, 145 Columbia Street West, Waterloo, ON', ['society']),
+    ('laurier', 'Wilfrid Laurier University', 'Waterloo campus', -80.5280, 43.4753, 'study', 'Wilfrid Laurier University, Waterloo, ON', ['wlu']),
     ('uptown', 'Uptown Waterloo', 'Waterloo Public Square, restaurants and cafés', -80.5223, 43.4643, 'food', 'Waterloo Public Square, Waterloo, ON'),
+    ('nofrills', 'No Frills, Forwell Creek Rd', 'Groceries: 24 Forwell Creek Rd (approximate spot)', -80.4360, 43.4730, 'groceries', "No Frills, 24 Forwell Creek Road, Waterloo, ON", ['nofrills', 'no frills']),
     ('conestoga', 'Conestoga Mall', 'King St N, by the ION station', -80.5296, 43.4983, 'shop', 'Conestoga Mall, Waterloo, ON'),
     ('fairview', 'Fairview Park Mall', 'Kitchener, by Fairway ION station', -80.4426, 43.4224, 'shop', 'Fairview Park Mall, Kitchener, ON'),
     ('central', 'Kitchener Central Station', 'Transit hub, King and Victoria', -80.4984, 43.4530, 'transit', 'Kitchener Central Station, Kitchener, ON'),
@@ -31,11 +33,13 @@ PLACES = [
 ]
 CITY = {
     'id': 'waterloo', 'name': 'Waterloo',
+    'workLabel': 'School',  # most people planning around Waterloo are heading to campus
     'cats': {'study': 'Any university campus'},
     'defaults': {
-        'addr': {'home': 'Albert St and Longwood Dr, Waterloo, ON', 'work': 'Kitchener Market, Kitchener, ON'},
-        'acts': [{'id': 'a1', 'label': 'Lunch', 'place': 'uptown', 'min': 30, 'max': 45, 'after': '', 'by': ''},
-                 {'id': 'a2', 'label': 'Study', 'place': 'uw', 'min': 180, 'max': '', 'after': '', 'by': ''}],
+        'addr': {'home': 'ICON, 330 Phillip Street, Waterloo, ON', 'work': 'University of Waterloo, Waterloo, ON'},
+        'acts': [{'id': 'a1', 'label': 'Class', 'place': 'work', 'min': 180, 'max': '', 'after': '', 'by': ''},
+                 {'id': 'a2', 'label': 'Lunch', 'place': 'uptown', 'min': 30, 'max': 45, 'after': '', 'by': ''},
+                 {'id': 'a3', 'label': 'Groceries', 'place': 'nofrills', 'min': 20, 'max': 40, 'after': '', 'by': ''}],
     },
     'info': {
         'pill': 'Waterloo and Kitchener · all GRT buses and ION · exact stop times',
