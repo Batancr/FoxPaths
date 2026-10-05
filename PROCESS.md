@@ -103,6 +103,8 @@ slow:
 - **A place to eat on your way**: restaurants from OpenStreetMap (Overpass API), narrowed to the ones with the
   smallest detour.
 - A limit on changing buses.
+- Per-trip settings ("Getting here" rows between stops: walk only, one route only, one or two buses) and a single
+  set leave time with optional leeway, so a trip can be pinned to the way the person already knows they want to go.
 - Named and typed saved places, saved days, recent places, "use my location", a date picker with Ontario holidays,
   calendar export, copy as text, share links, backup and restore, and an example mode.
 
@@ -170,7 +172,7 @@ Notes on this routine:
   README.
 - **Peterborough:** ask the City (705-745-0525) for its GTFS file, which would replace the estimates. Routes other
   than 2, 3, 5 and 6 still need schedules.
-- **Ideas not built yet:** a per-trip "no bus changes" toggle, restaurant opening hours, Cambridge in the Waterloo
+- **Ideas not built yet:** restaurant opening hours, Cambridge in the Waterloo
   tab, and Toronto, whose GTFS is too large to load whole in a phone browser and would need trimming.
 
 ## Where things are

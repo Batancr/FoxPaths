@@ -116,6 +116,17 @@ details.more[open]>summary h2::after{content:" −"}
 .chip:hover{border-color:var(--ink)}
 .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .dur-note{font-size:12.5px;color:var(--muted)}
+.leg{display:grid;gap:6px;margin:-12px -12px 0;padding:8px 12px;background:var(--surface-2);border-bottom:1px dashed var(--line);border-radius:var(--r) var(--r) 0 0;font-size:13px}
+.block>.leg{margin:0;border:1px dashed var(--line);border-radius:8px}
+.leg-title{color:var(--muted)}
+.leg-title::before{content:"↓ ";color:var(--accent);font-weight:700}
+.leg.set{background:var(--accent-soft)}
+.leg.set .leg-title{color:var(--ink);font-weight:700}
+.leg-ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.leg-ctl select{width:auto;flex:1 1 150px;padding:6px 8px;font-size:13px}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.row-at{display:grid;grid-template-columns:minmax(110px,140px) 1fr;gap:10px;align-items:end}
+.flabel{font-size:13px;color:var(--muted)}
 .dur-note.bad{color:var(--danger)}
 .pick input.needs{border-color:var(--signal)}
 .ac-list li.is-cat .ac-t::before{content:"✦ ";color:var(--accent)}
@@ -355,9 +366,10 @@ function buildNet(day){
   });
   conns.sort((a,b)=>a.dep-b.dep||a.arr-b.arr||a.trip-b.trip||a.seq-b.seq);
   const served=new Uint8Array(stops.length);conns.forEach(c=>{served[c.from]=1;served[c.to]=1;});
+  const routesAt=stops.map(()=>new Set());trips.forEach(t=>t.ids.forEach(i=>routesAt[i].add(t.r.id)));
   const foot=stops.map(()=>[]);
   stops.forEach(a=>stops.forEach(b=>{if(a!==b&&dist(a,b)<=0.5)foot[a.i].push({s:b.i,w:walkMin(a,b)});}));
-  return {stops,idx,trips,conns,foot,day,served};
+  return {stops,idx,trips,conns,foot,day,served,routesAt};
 }
 
 function lowerBound(arr,t,key){let lo=0,hi=arr.length;while(lo<hi){const m=(lo+hi)>>1;if(key(arr[m])<t)lo=m+1;else hi=m;}return lo;}
@@ -370,7 +382,7 @@ function makeRouter(o){
     const out=[];NET.stops.forEach(s=>{if(!NET.served[s.i])return;const w=walkMin(p,s);if(w<=o.maxWalk)out.push({s:s.i,w});});
     nearCache.set(p.id,out);return out;
   }
-  function query(A,B,t){
+  function query(A,B,t,allow){
     const N=NET.stops.length,C=NET.conns;
     const orig=near(A),dest=near(B);
     if(!orig.length||!dest.length)return null;
@@ -386,6 +398,7 @@ function makeRouter(o){
     };
     for(let i=lowerBound(C,t,c=>c.dep);i<C.length;i++){
       const c=C[i];if(c.dep>=best)break;
+      if(allow&&!allow[c.trip])continue;
       if(enter[c.trip]<0&&board[c.from]<=c.dep)enter[c.trip]=i;
       if(enter[c.trip]>=0&&reach(c.to,c.arr,{k:'t',e:enter[c.trip],x:i})){
         for(const f of NET.foot[c.to])reach(f.s,c.arr+f.w,{k:'f',from:c.to,w:f.w});
@@ -404,7 +417,7 @@ function makeRouter(o){
   }
   // Same search, but limited to K bus rides per trip (K=1: one bus, no changes). Keeps the earliest arrival
   // separately for each number of rides used, so a slower trip with fewer changes isn't thrown away.
-  function queryK(A,B,t,K){
+  function queryK(A,B,t,K,allow){
     const N=NET.stops.length,C=NET.conns,T=NET.trips.length;
     const orig=near(A),dest=near(B);
     if(!orig.length||!dest.length)return null;
@@ -421,6 +434,7 @@ function makeRouter(o){
     };
     for(let i=lowerBound(C,t,c=>c.dep);i<C.length;i++){
       const c=C[i];if(c.dep>=best)break;
+      if(allow&&!allow[c.trip])continue;
       for(let k=0;k<K&&k<enterK[c.trip];k++){if(board[k][c.from]<=c.dep){enter[c.trip]=i;enterK[c.trip]=k;break;}}
       if(enter[c.trip]<0)continue;
       const kk=enterK[c.trip]+1;
@@ -453,12 +467,21 @@ function makeRouter(o){
     steps.push({k:'walk',from:{s:bestStop},to:{p:B.id},t0:cur,t1:cur+wE,w:wE});walk+=wE;cur+=wE;
     return {leave,arr:cur,steps,wait,walk,rides};
   }
-  // every non-dominated bus journey A->B across the service day
-  function profile(A,B){
-    const key=A.id+'>'+B.id;if(profCache.has(key))return profCache.get(key);
+  // trips allowed when a trip is set to one route only
+  const allowCache=new Map();
+  function allowFor(route){
+    if(!allowCache.has(route)){const a=new Uint8Array(NET.trips.length);NET.trips.forEach((t,i)=>{if(t.r.id===route)a[i]=1;});allowCache.set(route,a);}
+    return allowCache.get(route);
+  }
+  const legKey=L=>L?`${L.walk?'w':''}|${L.route||''}|${L.K||''}`:'';
+  // every non-dominated bus journey A->B across the service day, following this trip's settings
+  function profile(A,B,L){
+    const key=A.id+'>'+B.id+'#'+legKey(L);if(profCache.has(key))return profCache.get(key);
+    if(L&&L.walk){profCache.set(key,[]);return [];}
+    const K=(L&&L.K)||o.maxRides,allow=L&&L.route?allowFor(L.route):null;
     const out=[];let t=300;
     while(t<1440){
-      const j=o.maxRides?queryK(A,B,t,o.maxRides):query(A,B,t);if(!j)break;
+      const j=K?queryK(A,B,t,K,allow):query(A,B,t,allow);if(!j)break;
       while(out.length&&out[out.length-1].arr>=j.arr)out.pop();
       out.push(j);t=j.leave+1;
     }
@@ -468,18 +491,33 @@ function makeRouter(o){
     return {leave:t,arr:t+w,wait:0,walk:w,rides:0,isWalk:true,
       steps:w?[{k:'walk',from:{p:A.id},to:{p:B.id},t0:t,t1:t+w,w}]:[]};
   }
-  function canWalk(A,B){return A.id===B.id||walkMin(A,B)<=o.walkDirect;}
-  function minTravel(A,B){
-    let m=canWalk(A,B)?walkMin(A,B):Infinity;
-    for(const j of profile(A,B))m=Math.min(m,j.arr-j.leave);
+  function canWalk(A,B,L){
+    if(A.id===B.id||(L&&L.walk))return true;
+    if(L&&L.route)return false; // "only this bus" means no walking the whole way instead
+    return walkMin(A,B)<=o.walkDirect;
+  }
+  function minTravel(A,B,L){
+    let m=canWalk(A,B,L)?walkMin(A,B):Infinity;
+    for(const j of profile(A,B,L))m=Math.min(m,j.arr-j.leave);
     return m;
   }
-  function options(A,B,ready,latest,deadline){
-    const res=[],prof=profile(A,B);
-    for(let i=lowerBound(prof,ready,j=>j.leave);i<prof.length&&prof[i].leave<=latest;i++){
+  // leave at t instead of j.leave and wait longer at the first stop (used for a fixed leave time)
+  function delayed(j,t){
+    const steps=j.steps.map(s=>({...s})),w0=steps[0].w;
+    steps[0].t0=t;steps[0].t1=t+w0;
+    if(steps[1]&&steps[1].k==='wait')steps[1].t0=t+w0;
+    else if(steps[1])steps.splice(1,0,{k:'wait',at:steps[1].from,t0:t+w0,t1:steps[1].t0});
+    return {...j,leave:t,steps,wait:j.wait+(j.leave-t)};
+  }
+  function options(A,B,ready,latest,deadline,L,pad){
+    const res=[],prof=profile(A,B,L);
+    let i=lowerBound(prof,ready,j=>j.leave);
+    for(;i<prof.length&&prof[i].leave<=latest;i++){
       if(prof[i].arr>deadline)break;res.push(prof[i]);
     }
-    if(canWalk(A,B)){
+    // from the start of the day you can always leave at your latest time and wait for the next bus
+    if(pad&&latest<Infinity){for(;i<prof.length;i++){if(prof[i].leave>latest){if(prof[i].arr<=deadline)res.push(delayed(prof[i],latest));break;}}}
+    if(canWalk(A,B,L)){
       const w=walkMin(A,B);
       for(let t=ready,n=0;t<=latest&&t+w<=deadline&&n<48;t+=5,n++)res.push(walkLeg(A,B,t,w));
     }
@@ -512,7 +550,8 @@ function searchDays(inp,R,endFrom,endTo){
     const fromC=k=>k===0?[START]:cand[order[k-1]];
     const toC=k=>k<n?cand[order[k]]:[END];
     const minLeg=[];
-    for(let k=0;k<=n;k++){let m=Infinity;for(const a of fromC(k))for(const b of toC(k))m=Math.min(m,R.minTravel(a,b));minLeg.push(m);}
+    const legAt=k=>k<n?acts[order[k]].leg:inp.end.leg;
+    for(let k=0;k<=n;k++){let m=Infinity;for(const a of fromC(k))for(const b of toC(k))m=Math.min(m,R.minTravel(a,b,legAt(k)));minLeg.push(m);}
     const tail=new Array(n+1).fill(0);
     for(let k=n-1;k>=0;k--)tail[k]=acts[order[k]].min+minLeg[k+1]+tail[k+1];
     if(minLeg.some(m=>m===Infinity))continue;
@@ -531,7 +570,7 @@ function searchDays(inp,R,endFrom,endTo){
     const dfs=(k,from,ready,latest)=>{
       if(leaves.length>=CAP){truncated=true;return;}
       for(const to of toC(k)){
-        const opts=R.options(from,to,ready,latest,endTo-tail[k]);
+        const opts=R.options(from,to,ready,latest,endTo-tail[k],legAt(k),k===0);
         for(const op of opts){
           if(k===n){if(op.arr>=endFrom&&op.arr<=endTo){stack[k]={op,to};leaf();if(leaves.length>=CAP){truncated=true;return;}}continue;}
           const act=acts[order[k]];
@@ -606,6 +645,14 @@ function solve(inp){
   inp.acts.filter(a=>a.place.startsWith('any:')).forEach(a=>{
     const c=a.place.slice(4);if(!inCat(c).some(p=>R.near(p).length))reasons.push(`None of the places for "${CATS[c]||c}" are near a bus stop with service then.`);});
   const dayName={weekday:'weekdays',saturday:'Saturdays',sunday:'Sundays and holidays'}[inp.day];
+  // trips set to one route: say which one can't make the trip at all
+  if(!inp.reorder)[...inp.acts,{leg:inp.end.leg,place:inp.end.place,label:placeById[inp.end.place].n}].forEach((a,k)=>{
+    const L=a.leg,from=k===0?inp.start.place:inp.acts[k-1].place;
+    if(!L||!L.route||a.place.startsWith('any:')||from.startsWith('any:'))return;
+    const A=placeById[from],B=placeById[a.place];
+    if(!R.profile(A,B,L).length)reasons.push(`Route ${L.route} has no single trip from near ${A.n} to near ${B.n} on ${({weekday:'weekdays',saturday:'Saturdays',sunday:'Sundays and holidays'})[inp.day]}, within ${inp.maxWalk} min walk of each. Pick another route for that trip, or raise the max walk to a stop.`);
+  });
+  if([...inp.acts.map(a=>a.leg),inp.end.leg].some(L=>L&&(L.walk||L.route||L.K)))reasons.push('Some trips are set to walk only, one route only, or a set number of buses. Try "Any bus or walk" on those trips to see if that\'s what is blocking it.');
   if(inp.maxRides)reasons.push(inp.maxRides===1?'You asked for no bus changes, so only trips you can make on a single bus count. Allow one change, or raise the max walk to a stop so FoxPaths can walk you to a bus that goes straight there.':'You asked for at most one bus change. Allowing more changes may find a plan.');
   if(far.length)reasons.push(`On ${dayName}, no stop with bus service is within ${inp.maxWalk} min walk of ${far.map(p=>p.n).join(' or ')}. Raise the max walk to a stop, pick another day, or choose a different place.`);
   const relaxed=searchDays({...inp,goal:'early'},R,0,1440+240);
@@ -614,7 +661,7 @@ function solve(inp){
     if(bestEnd>inp.end.to)reasons.push(`With these minimum times, the earliest you could arrive at ${placeById[inp.end.place].n} is ${fmt(bestEnd)}, after your ${fmt(inp.end.to)} limit. Leave earlier, shorten a stop, or push the arrival window later.`);
     else reasons.push(`A day fits, but not with arrival between ${fmt(inp.end.from)} and ${fmt(inp.end.to)}. Try widening the arrival window.`);
   }else if(!far.length){
-    reasons.push(`No bus trips link these places at those times. Only Routes ${ROUTES.map(r=>r.id).join(', ')} have timetables so far. Try a longer max walk, or check the time limits on each stop.`);
+    reasons.push(`No bus trips link these places at those times.${BUNDLE.exact?'':` Only Routes ${ROUTES.map(r=>r.id).join(', ')} have timetables so far.`} Try a longer max walk, or check the time limits on each stop.`);
   }
   return {ok:false,reasons};
 }
@@ -749,6 +796,63 @@ function durNote(a){
   if(!mn&&mx==null)return 'How long you need here';
   return mx==null?`At least ${fmtDur(mn)}`:mn===mx?`About ${fmtDur(mn)}`:`${fmtDur(mn)} to ${fmtDur(mx)}`;
 }
+// "Getting here": settings for the trip into a stop (or into the end). Stored on the destination, so they
+// stay with it when stops are reordered. how: any | walk | r:<route>; rides: '' (same as overall) | '1' | '2'
+const legOf=v=>({how:(v&&v.how)||'any',rides:(v&&v.rides)||''});
+function normLeg(v){
+  const L=legOf(v);
+  if(L.how==='walk')return {walk:true};
+  if(L.how.startsWith('r:')&&BUNDLE.routes[L.how.slice(2)])return {route:L.how.slice(2),K:1};
+  return L.rides==='1'?{K:1}:L.rides==='2'?{K:2}:{};
+}
+function routesNear(p){ // routes with a stop within the max walk of a place
+  if(!p)return null;
+  const out=new Set(),mw=Math.max(1,+state.maxWalk||8);
+  NET.stops.forEach(s=>{if(NET.served[s.i]&&walkMin(p,s)<=mw)NET.routesAt[s.i].forEach(r=>out.add(r));});
+  return out;
+}
+function legRow(key,leg,fromV,toV){
+  const L=legOf(leg),pl=v=>v&&!v.startsWith('any:')?placeById[v]:null,fp=pl(fromV),tp=pl(toV);
+  const a=routesNear(fp),b=routesNear(tp);
+  const near=a||b?ROUTES.filter(r=>(!a||a.has(r.id))&&(!b||b.has(r.id))):[],rest=ROUTES.filter(r=>!near.includes(r));
+  const short=n=>esc(String(n).split(',')[0]);
+  const nearLabel=a&&b?'Stops near both places':`Stops near ${short((fp||tp).n)}`;
+  const opt=r=>`<option value="r:${esc(r.id)}"${L.how==='r:'+r.id?' selected':''}>Only ${r.mode==='rail'?'':'bus '}${esc(r.id)}${r.name&&r.name!==r.id?' · '+esc(r.name):''}</option>`;
+  const walk=fp&&tp?walkMin(fp,tp):null;
+  const set=L.how!=='any'||L.rides;
+  return `<div class="leg${set?' set':''}" role="group" aria-label="Getting here">
+    <span class="leg-title">${fromV?`Getting here from ${short(placeName(fromV))||'the last stop'}`:'Getting here'}</span>
+    <div class="leg-ctl">
+      <select id="leg-${key}-how" aria-label="How to get here">
+        <option value="any"${L.how==='any'?' selected':''}>Any bus or walk</option>
+        <option value="walk"${L.how==='walk'?' selected':''}>Walk only${walk!=null?` (about ${fmtDur(Math.round(walk))})`:''}</option>
+        ${near.length?`<optgroup label="${nearLabel}">${near.map(opt).join('')}</optgroup>`:''}
+        ${rest.length?`<optgroup label="${near.length?'Other routes':'Routes'}">${rest.map(opt).join('')}</optgroup>`:''}
+      </select>
+      <select id="leg-${key}-rides" aria-label="Buses on this trip"${L.how==='any'?'':' hidden'}>
+        <option value=""${!L.rides?' selected':''}>Buses: default</option>
+        <option value="1"${L.rides==='1'?' selected':''}>1 bus, no change</option>
+        <option value="2"${L.rides==='2'?' selected':''}>Up to 2 buses</option>
+      </select>
+      ${set?`<button type="button" class="chip leg-reset" data-action="legreset" data-leg="${key}">Reset</button>`:''}
+    </div>
+  </div>`;
+}
+const LEEWAYS=[[0,'Exactly'],[5,'±5 min'],[10,'±10 min'],[15,'±15 min']];
+function startTimeHTML(s){
+  const at=s.start.mode==='at',lw=+s.start.leeway||0;
+  const seg=`<div class="seg" role="group" aria-label="When you leave">${[['range','Leave between'],['at','Leave at a set time']].map(([v,l])=>`<button type="button" class="chip" data-action="startmode" data-v="${v}" aria-pressed="${(at?'at':'range')===v}">${l}</button>`).join('')}</div>`;
+  if(!at)return seg+`<div class="row3">
+        <label class="field"><span>Leave between</span><input type="time" step="300" id="start-from" value="${esc(s.start.from)}"></label>
+        <span class="to">and</span>
+        <label class="field"><span>&nbsp;</span><input type="time" step="300" id="start-to" value="${esc(s.start.to)}" aria-label="Leave by"></label>
+      </div>`;
+  return seg+`<div class="row-at">
+        <label class="field"><span>Leave at</span><input type="time" step="60" id="start-at" value="${esc(s.start.at||s.start.from)}"></label>
+        <div class="field"><span class="flabel">Leeway</span><div class="chips" role="group" aria-label="Leeway">${LEEWAYS.map(([v,l])=>`<button type="button" class="chip" data-action="leeway" data-v="${v}" aria-pressed="${lw===v}">${l}</button>`).join('')}</div></div>
+      </div>
+      <p class="hint">${lw?`FoxPaths may leave up to ${lw} minutes earlier or later than this to catch a better bus.`:'You leave at exactly this time. If no bus fits right then, the plan has you wait at the stop.'}</p>`;
+}
 function goalOptions(){
   const o=state.acts.map((a,i)=>[`max:${a.id}`,`Most time at: ${a.label||'Stop '+(i+1)}`]);
   o.push(['smooth','Least time wasted (waiting or idle)'],['wait','Least waiting at stops'],['walk','Least walking'],['late','Leave as late as possible'],['early','Get back as early as possible']);
@@ -765,6 +869,7 @@ function renderSetup(){
     const dt=durText(a);
     return `
     <li class="act" data-id="${a.id}">
+      ${legRow(a.id,a.leg,s.reorder?'':(i===0?s.start.place:s.acts[i-1].place),a.place)}
       <div class="act-head">
         <span class="act-num${s.reorder?'':' grab'}" title="${s.reorder?'The app may change the order':'Drag to reorder'}">${s.reorder?'·':i+1}</span>
         <input type="text" id="act-${a.id}-label" value="${esc(a.label)}" placeholder="What you'll do" aria-label="Stop name">
@@ -812,11 +917,7 @@ function renderSetup(){
       <p class="hint" id="date-note">${esc(dateNote(s))}</p>
       ${pickField('start',s.start.place,'From',false)}
       <div class="chips"><button type="button" class="chip now" data-action="now">Leave now</button><button type="button" class="chip" data-action="here">Use my location</button><span class="hint" id="here-msg" role="status">${esc(hereMsg)}</span></div>
-      <div class="row3">
-        <label class="field"><span>Leave between</span><input type="time" step="300" id="start-from" value="${esc(s.start.from)}"></label>
-        <span class="to">and</span>
-        <label class="field"><span>&nbsp;</span><input type="time" step="300" id="start-to" value="${esc(s.start.to)}" aria-label="Leave by"></label>
-      </div>
+      ${startTimeHTML(s)}
     </div>
     <div class="block">
       <h2>Stops</h2>
@@ -826,6 +927,7 @@ function renderSetup(){
     </div>
     <div class="block">
       <h2>End</h2>
+      ${legRow('end',s.end.leg,s.reorder||!s.acts.length?'':s.acts[s.acts.length-1].place,s.end.place)}
       ${pickField('end',s.end.place,'Finish at',false)}
       <label class="check"><input type="checkbox" id="endflex" ${s.end.flex?'checked':''}><span>No set arrival time<br><span class="hint">FoxPaths picks the times that waste the least time waiting.</span></span></label>
       <div class="row3"${s.end.flex?' hidden':''}>
@@ -866,12 +968,14 @@ function renderSetup(){
 function readSetup(){
   const v=id=>document.getElementById(id)?.value??'';
   const num=(id,d)=>{const x=parseFloat(v(id));return Number.isFinite(x)?x:d;};
-  state.start={...state.start,from:v('start-from'),to:v('start-to')};
-  state.end={...state.end,from:v('end-from'),to:v('end-to'),flex:!!document.getElementById('endflex')?.checked};
+  const el=id=>document.getElementById(id);
+  const legIn=(key,old)=>el(`leg-${key}-how`)?{how:v(`leg-${key}-how`)||'any',rides:v(`leg-${key}-how`)==='any'?v(`leg-${key}-rides`):''}:old;
+  state.start={...state.start,...(el('start-from')?{from:v('start-from'),to:v('start-to')}:{}),...(el('start-at')?{at:v('start-at')}:{})};
+  state.end={...state.end,from:v('end-from'),to:v('end-to'),flex:!!el('endflex')?.checked,leg:legIn('end',state.end.leg)};
   state.acts=state.acts.map(a=>{
     const d=DayParse.parseDur(v(`act-${a.id}-dur`));
     const label=v(`act-${a.id}-label`);
-    return {...a,label,auto:a.auto&&label===a.label,min:d?d.min:a.min,max:d?(d.max==null?'':d.max):a.max,after:v(`act-${a.id}-after`),by:v(`act-${a.id}-by`)};
+    return {...a,label,auto:a.auto&&label===a.label,min:d?d.min:a.min,max:d?(d.max==null?'':d.max):a.max,after:v(`act-${a.id}-after`),by:v(`act-${a.id}-by`),leg:legIn(a.id,a.leg)};
   });
   state.reorder=document.getElementById('reorder')?.checked||false;
   state.date=v('date');
@@ -886,11 +990,13 @@ function readSetup(){
 }
 function toInput(){
   const T=s=>parseT(s);
+  const st=state.start,at=st.mode==='at'?(T(st.at)??T(st.from)??600):null,lw=Math.max(0,+st.leeway||0);
+  const endLeg=normLeg(state.end.leg);
   return {
-    start:{place:state.start.place,from:T(state.start.from)??600,to:T(state.start.to)??(T(state.start.from)??600)},
-    end:state.end.flex?{place:state.end.place,from:0,to:1440+180}:{place:state.end.place,from:T(state.end.from)??0,to:T(state.end.to)??1439},
+    start:at!=null?{place:st.place,from:Math.max(0,at-lw),to:at+lw,at}:{place:st.place,from:T(st.from)??600,to:T(st.to)??(T(st.from)??600)},
+    end:state.end.flex?{place:state.end.place,from:0,to:1440+180,leg:endLeg}:{place:state.end.place,from:T(state.end.from)??0,to:T(state.end.to)??1439,leg:endLeg},
     acts:state.acts.map((a,i)=>{const mn=Math.max(0,parseFloat(a.min)||0);let mx=parseFloat(a.max);mx=Number.isFinite(mx)&&mx>=mn?mx:null;
-      return {id:a.id,label:a.label||'Stop '+(i+1),place:a.place,min:mn,max:mx,after:T(a.after),by:T(a.by)};}),
+      return {id:a.id,label:a.label||'Stop '+(i+1),place:a.place,min:mn,max:mx,after:T(a.after),by:T(a.by),leg:normLeg(a.leg)};}),
     maxRides:state.rides==='1'?1:state.rides==='2'?2:0,day:dayOf(state),reorder:state.reorder,maxWalk:Math.max(1,state.maxWalk),buffer:Math.max(0,state.buffer),walkDirect:Math.max(0,state.walkDirect),goal:state.goal
   };
 }
@@ -898,7 +1004,7 @@ function leaveNow(){
   const d=new Date(),m=Math.floor((d.getHours()*60+d.getMinutes())/5)*5;
   const hm=x=>`${String(Math.floor(x/60)%24).padStart(2,'0')}:${String(x%60).padStart(2,'0')}`;
   const day=['sunday','weekday','weekday','weekday','weekday','weekday','saturday'][d.getDay()];
-  state.start.from=hm(m);state.start.to=hm(Math.min(m+90,23*60+55));state.day=day;state.date=isoDate(d);
+  state.start.from=hm(m);state.start.to=hm(Math.min(m+90,23*60+55));state.start.mode='range';state.day=day;state.date=isoDate(d);
 }
 let planTimer=null;
 function schedulePlan(delay){clearTimeout(planTimer);planTimer=setTimeout(run,delay??450);}
@@ -954,9 +1060,10 @@ function planRows(plan,inp){
   const rows=[];const n=plan.legs.length-1;
   const startP=placeById[inp.start.place],endP=plan.legs[n].to;
   const legLink=k=>{const leg=plan.legs[k];const from=k===0?startP:plan.legs[k-1].to;return gmLink(from,leg.to,leg.op.isWalk||leg.op.rides===0);};
-  const extra=plan.start-inp.start.from;
+  const ref=inp.start.at??inp.start.from,extra=plan.start-ref;
   rows.push({k:'start',t:plan.start,main:`Leave ${esc(startP.n)}`,link:legLink(0),
-    sub:extra>=3?`You have ${fmtDur(extra)} more at ${esc(startP.n)}: leaving at ${fmt(plan.start)} instead of ${fmt(inp.start.from)} avoids waiting later on.`:''});
+    sub:inp.start.at!=null?(extra?`${fmtDur(Math.abs(extra))} ${extra>0?'after':'before'} your set time of ${fmt(ref)}, within the leeway you allowed.`:'')
+      :extra>=3?`You have ${fmtDur(extra)} more at ${esc(startP.n)}: leaving at ${fmt(plan.start)} instead of ${fmt(ref)} avoids waiting later on.`:''});
   plan.legs.forEach((leg,k)=>{
     for(const st of leg.op.steps){
       if(st.k==='walk'&&st.w>0)rows.push({k:'walk',t:st.t0,main:`Walk ${st.w} min to ${esc(nm(st.to))}`});
@@ -994,7 +1101,7 @@ function optionCard(pick,i,inp){
   return `<button class="opt" data-opt="${i}" aria-pressed="${i===selected}">
     <span class="tag">${esc(pick.tag)}</span>
     <span class="span">${fmt(p.start)} → ${fmt(p.end)}</span>
-    ${p.start-inp.start.from>=10?`<span class="picked">Stay ${fmtDur(p.start-inp.start.from)} more before you leave</span>`:''}
+    ${inp.start.at==null&&p.start-inp.start.from>=10?`<span class="picked">Stay ${fmtDur(p.start-inp.start.from)} more before you leave</span>`:''}
     <dl>${actRows}<dt>Waiting</dt><dd>${fmtDur(p.wait)}</dd><dt>Walking</dt><dd>${fmtDur(p.walk)}</dd><dt>Bus changes</dt><dd>${p.transfers}</dd></dl>
     ${order}${picked.length?`<div class="picked">App picked: ${picked.join(', ')}</div>`:''}
   </button>`;
@@ -1121,7 +1228,7 @@ $('#setup').addEventListener('change',e=>{
   readSetup();
   if(e.target.id==='date'){save();renderSetup();}
   if(e.target.id==='endflex'&&state.end.flex){state.goal='smooth';}
-  if(e.target.id==='reorder'||e.target.id==='endflex'||e.target.id==='rides'){save();renderSetup();}
+  if(e.target.id==='reorder'||e.target.id==='endflex'||e.target.id==='rides'||e.target.id.startsWith('leg-')||e.target.id==='maxWalk'){save();renderSetup();}
   schedulePlan(150);
 });
 $('#setup').addEventListener('click',e=>{
@@ -1139,6 +1246,11 @@ $('#setup').addEventListener('click',e=>{
     case 'dur':{const d=DayParse.parseDur(b.dataset.v);if(d&&i>=0){state.acts[i].min=d.min;state.acts[i].max=d.max==null?'':d.max;}break;}
     case 'parse':applyQuick();return;
     case 'now':leaveNow();state.goal='smooth';break;
+    case 'startmode':
+      if(b.dataset.v==='at'&&state.start.mode!=='at'){state.start.at=state.start.at||state.start.from;if(state.start.leeway==null)state.start.leeway=10;}
+      state.start.mode=b.dataset.v;break;
+    case 'leeway':state.start.leeway=+b.dataset.v;break;
+    case 'legreset':{const k=b.dataset.leg;if(k==='end')state.end.leg=null;else{const a=state.acts.find(x=>x.id===k);if(a)a.leg=null;}break;}
     case 'unsave':{const id=b.dataset.pid;state.custom.saved=state.custom.saved.filter(p=>p.id!==id);
       state.acts.forEach(a=>{if(a.place===id)a.place='';});['start','end'].forEach(k=>{if(state[k].place===id)state[k].place='home';});
       setCustomPlaces(state.custom);break;}
@@ -1173,13 +1285,15 @@ function quickOutHTML(){
   const chip=(t,cls,jump)=>`<button type="button" class="qchip${cls?' '+cls:''}" data-jump="${jump}" title="Go to this part of the form">${t}</button>`;
   const parts=[];
   const fmtT=s=>s?fmt(parseT(s)):'';
-  if(quickInfo.start)parts.push(chip(`Leave ${esc(placeName(state.start.place))} ${quickInfo.now?'any time from now':fmtT(state.start.from)+'–'+fmtT(state.start.to)}`,'','addr-start'));
+  const lw=+state.start.leeway||0;
+  const legNote=l=>{const L=legOf(l);return L.how==='walk'?' · walk there':L.how.startsWith('r:')?` · only bus ${esc(L.how.slice(2))}`:L.rides==='1'?' · 1 bus':L.rides==='2'?' · up to 2 buses':'';};
+  if(quickInfo.start)parts.push(chip(`Leave ${esc(placeName(state.start.place))} ${quickInfo.now?'any time from now':state.start.mode==='at'?'at '+fmtT(state.start.at)+(lw?` (±${lw} min)`:' exactly'):fmtT(state.start.from)+'–'+fmtT(state.start.to)}`,'','addr-start'));
   state.acts.forEach((a,i)=>{
     const where=a.place?placeName(a.place):'no place yet';
     const lim=[a.after?'after '+fmtT(a.after):'',a.by?'done by '+fmtT(a.by):''].filter(Boolean).join(', ');
-    parts.push(chip(`${i+1}. ${esc(a.label||'Stop')} · ${esc(where)} · ${esc(durNote(a).replace(/^About /,''))}${lim?' · '+esc(lim):''}`,a.place?'':'warn',a.place?`act-${a.id}-dur`:`addr-act-${a.id}`));
+    parts.push(chip(`${i+1}. ${esc(a.label||'Stop')} · ${esc(where)} · ${esc(durNote(a).replace(/^About /,''))}${lim?' · '+esc(lim):''}${legNote(a.leg)}`,a.place?'':'warn',a.place?`act-${a.id}-dur`:`addr-act-${a.id}`));
   });
-  if(quickInfo.end)parts.push(chip(state.end.flex?`${esc(placeName(state.end.place))} · no set time, least waiting`:`${esc(placeName(state.end.place))} ${fmtT(state.end.from)}–${fmtT(state.end.to)}`,'','addr-end'));
+  if(quickInfo.end)parts.push(chip((state.end.flex?`${esc(placeName(state.end.place))} · no set time, least waiting`:`${esc(placeName(state.end.place))} ${fmtT(state.end.from)}–${fmtT(state.end.to)}`)+legNote(state.end.leg),'','addr-end'));
   const notes=[...quickInfo.notes];
   return `<div class="qout" role="status"><span class="eyebrow">Here's what I understood</span><div class="qchips">${parts.join('')}</div>${notes.length?`<ul class="qnotes">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}<p class="hint">Tap a chip to jump to it, or edit the sentence and press the button again.</p></div>`;
 }
@@ -1224,16 +1338,18 @@ function useMyLocation(){
 async function applyQuick(){
   const text=($('#quick')?.value||'').trim();state.quick=text;
   if(!text){quickInfo={notes:['Type your day first, for example: '+quickExample()]};renderSetup();return;}
-  const r=DayParse.parseDay(text,{places:PLACES,cats:CATS,now:new Date()});
+  const r=DayParse.parseDay(text,{places:PLACES,cats:CATS,now:new Date(),routes:ROUTES.map(x=>x.id)});
   const notes=[];
   if(r.day){state.day=r.day;state.date='';}
   if(r.reorder!=null)state.reorder=r.reorder;
   if(r.maxRides){state.rides=String(r.maxRides);state.moreOpen=true;}
-  if(r.start){if(r.start.place)state.start.place=r.start.place;if(r.start.from){state.start.from=r.start.from;state.start.to=r.start.to;}}
+  if(r.start){if(r.start.place)state.start.place=r.start.place;if(r.start.from){state.start.from=r.start.from;state.start.to=r.start.to;}
+    if(r.start.at){state.start.mode='at';state.start.at=r.start.at;state.start.leeway=r.start.leeway||0;}else if(r.start.from)state.start.mode='range';}
   if(r.leaveNow){leaveNow();if(!r.start||!r.start.place)state.start.place=state.start.place||'home';}
   if(r.end){if(r.end.place)state.end.place=r.end.place;if(r.end.from){state.end.from=r.end.from;state.end.to=r.end.to;}state.end.flex=!!r.end.flex;}
+  state.end.leg=r.end&&r.end.leg||null;
   if(r.acts.length){
-    state.acts=r.acts.map(a=>({id:'a'+(++nextId),label:a.label,place:a.place||'',placeText:a.placeText,min:a.min??30,max:a.min==null?60:(a.max==null?'':a.max),after:a.after||'',by:a.by||'',auto:!a.label}));
+    state.acts=r.acts.map(a=>({id:'a'+(++nextId),label:a.label,place:a.place||'',placeText:a.placeText,min:a.min??30,max:a.min==null?60:(a.max==null?'':a.max),after:a.after||'',by:a.by||'',auto:!a.label,leg:a.leg||null}));
     r.acts.forEach(a=>{if(a.min==null)notes.push(`No time given for "${a.label||a.placeText}", so I used 30m to 1h.`);});
   }else notes.push("I couldn't find any stops in that. Try something like: "+quickExample());
   if(r.ignored.length)notes.push('I skipped: '+r.ignored.map(x=>`"${x}"`).join(', '));

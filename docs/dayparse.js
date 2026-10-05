@@ -2,7 +2,8 @@
    Turns a sentence like "leave home 10-11am, lunch at Uptown 30-45 min, study at UW 3h+, home by 7pm"
    into a start, stops and an end. Rule-based, no AI: it looks for times, durations, day words and place names.
    parseDay(text, ctx) -> {start, end, day, reorder, goalLabel, acts:[...], ignored:[...]}
-   ctx = {places:[{id,n,sub,cat,x,y}], cats:{cat:label}, now:Date} */
+   ctx = {places:[{id,n,sub,cat,x,y}], cats:{cat:label}, now:Date, routes:['6', ...]}
+   Each stop (and the end) may carry leg:{how:'walk'|'r:<route>', rides:'1'|'2'} for the trip getting there. */
 (function (root) {
   'use strict';
 
@@ -161,6 +162,32 @@
     return null;
   }
 
+  // ---------------------------------------------------------------- how to get there
+  // "walk to the library", "take bus 6 to KFC", "ride the ION", "on one bus", "up to 2 buses"
+  // returns {leg:{how, rides}, rest} with the matched words removed, or null
+  function readLeg(c, routes) {
+    const ids = (routes || []).map(r => String(r).toLowerCase());
+    const leg = { how: 'any', rides: '' };
+    let m;
+    const WALK = /\b(?:only |just )?(?:walk(?:ing)?(?:\s+over)?(?=\s+(?:to|there|home|back)\b)|on foot|by foot)\b/;
+    if ((m = c.match(WALK))) { leg.how = 'walk'; c = c.replace(m[0], ' '); }
+    else {
+      const tries = [
+        /\b(?:only |just )?(?:(?:take|taking|ride|riding|catch|on|via|using|by)\s+)?(?:the\s+)?(?:bus|route|line|rt\.?)\s*#?\s*([a-z0-9\/]+)\b(?:\s+bus)?(?:\s+only)?/,
+        /\b(?:only |just )?(?:take|taking|ride|riding|catch)\s+(?:the\s+)?#?([a-z0-9\/]+)(?!\s*(?:m|min|mins|minutes?|h|hrs?|hours?)\b)(?:\s+bus)?(?:\s+only)?(?=\s|$)/,
+      ];
+      for (const re of tries) {
+        const mm = c.match(re);
+        if (mm && ids.includes(mm[1])) { leg.how = 'r:' + routes[ids.indexOf(mm[1])]; c = c.replace(mm[0], ' '); break; }
+      }
+    }
+    if (leg.how === 'any') {
+      if ((m = c.match(/\b(?:(?:by|on|with|in|via|taking|take)\s+)?(?:just\s+)?(?:one|1)\s+bus\b/))) { leg.rides = '1'; c = c.replace(m[0], ' '); }
+      else if ((m = c.match(/\b(?:(?:by|on|with|in|via|taking|take)\s+)?(?:up to\s+|at most\s+)?(?:two|2)\s+buses\b/))) { leg.rides = '2'; c = c.replace(m[0], ' '); }
+    }
+    return leg.how === 'any' && !leg.rides ? null : { leg, rest: c.replace(/\s+/g, ' ') };
+  }
+
   // ---------------------------------------------------------------- clauses
   const DAYS = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
   function dayType(dow) { return dow === 0 ? 'sunday' : dow === 6 ? 'saturday' : 'weekday'; }
@@ -199,14 +226,21 @@
     const clauses = s.split(/[,;\n]|\.\s|\bthen\b|\bafter that\b|\bfollowed by\b|\band\s+(?=(?:then\s+)?[a-z]+\s+(?:at|on|in|near)\b)/)
       .map(c => c.trim().replace(/^(?:and|then|first|finally|after|next)\s+/, '').replace(/\.$/, '').trim()).filter(Boolean);
 
+    let startLeg = null;
     for (const raw of clauses) {
       let c = ' ' + raw + ' ';
+      // "give or take 10 min", "10 min leeway" on a leave time (read first, so "take 10" isn't taken as a route)
+      const lw = c.match(/(?:give or take|plus or minus|±|\+\/-)\s*(\d+)\s*(?:m|min|mins|minutes?)?\b|\b(\d+)\s*(?:m|min|mins|minutes?)\s+(?:of\s+)?(?:leeway|flex(?:ibility)?|wiggle room|either way)\b/);
+      if (lw) c = c.replace(lw[0], ' ');
+      const lg = readLeg(c, ctx.routes);
+      if (lg) c = ' ' + lg.rest.trim() + ' ';
       const startWords = /\b(?:leave|leaving|start|starting|depart|departing|head out|set off|wake up)\b/.test(c) || /^\s*from\b/.test(c) ||
         /^\s*(?:i'?m|i am|currently|we'?re)\s+(?:at|in)\b/.test(c);
       const isEnd = !startWords && (/^\s*(?:go |get |be |head |come )?(?:back )?(?:home|back)\b/.test(c) ||
         /\b(?:end|finish|ending|finishing|done)\b/.test(c) || /\b(?:home|back) (?:by|before|around|between|at|for)\b/.test(c));
       const isStart = !isEnd && startWords;
       const role = isEnd ? 'end' : isStart ? 'start' : 'act';
+      const leeway = lw && role === 'start' ? +(lw[1] || lw[2]) : null;
       const t = findTime(c, role);
       if (t) c = c.replace(t.text, ' ');
       let dur = role === 'act' ? findDuration(c) : null;
@@ -231,10 +265,14 @@
         else if (!placeText) w.place = 'home';
         else if (placeText && placeText !== 'home') w.placeText = placeText;
         if (!t && role === 'end') w.flex = true; // "then home" with no time: no set arrival
+        if (lg && role === 'end') w.leg = lg.leg;
+        if (lg && role === 'start') startLeg = lg.leg; // "leave home on bus 6": the trip to the first stop
         if (t) {
           if (role === 'start') {
             const [a, b] = t.kind === 'range' ? [t.a, t.b] : t.kind === 'by' ? [t.a - 60, t.a] : t.kind === 'after' ? [t.a, t.a + 60] : t.kind === 'around' ? [t.a - 15, t.a + 15] : [t.a, t.a + 15];
             w.from = hhmm(Math.max(0, a)); w.to = hhmm(b);
+            // "leave at 10" is a set time; "around 10" is a set time with some leeway
+            if (t.kind === 'at' || t.kind === 'around') { w.at = hhmm(t.a); w.leeway = leeway != null ? leeway : t.kind === 'around' ? 15 : 0; }
           } else {
             const [a, b] = t.kind === 'range' ? [t.a, t.b] : t.kind === 'by' ? [t.a - 60, t.a] : t.kind === 'after' ? [t.a, t.a + 120] : [t.a - 15, t.a + 15];
             w.from = hhmm(Math.max(0, a)); w.to = hhmm(Math.min(1439, b));
@@ -285,6 +323,8 @@
         act.label = p ? p.n.split(',')[0] : '';
       }
       if (!act.place && !act.placeText && !dur && !t) { out.ignored.push(raw); continue; }
+      if (lg) act.leg = lg.leg;
+      else if (startLeg && !out.acts.length) act.leg = startLeg;
       out.acts.push(act);
     }
     return out;

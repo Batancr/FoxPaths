@@ -37,6 +37,15 @@ Newmarket and Waterloo, Ontario.
   browser. Open the site with `?demo` (the "See an example day" link) to try it without changing your saved data
 - **Changing buses**: allow bus changes, at most one, or none (one bus per trip, walking further to it instead).
   Under More options, or say "no transfers" or "one bus only" in Type your day
+- **Getting here, per trip**: above every stop and above the End sits a small "Getting here" row for the trip into
+  that place. Pick walk only, one route only (routes with stops near both places are listed first), one bus, or up
+  to two buses, and FoxPaths plans that trip only that way. The setting stays with the destination when stops are
+  reordered. In Type your day: "walk to the library", "take bus 6 to KFC", "ride the ION to Uptown", "home by 7 on one
+  bus"
+- **Leave at a set time**: switch Start from "Leave between" to "Leave at a set time", then choose Exactly, ±5, ±10 or
+  ±15 min of leeway. Exactly means you leave at that time and wait at the stop if needed; leeway lets FoxPaths leave a
+  little earlier or later to catch a better bus. In Type your day: "leave home at 10" (exactly), "around 10" (±15),
+  "at 10 give or take 10 min"
 - **Which side of the street**: for every bus, which way it's heading, which side of the street to wait on (buses
   drive on the right, so the stop is on the right-hand side of travel), and a Street View link to the stop. For the
   ION light rail it names the platform direction instead
