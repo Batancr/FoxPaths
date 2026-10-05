@@ -22,6 +22,19 @@ Newmarket and Waterloo, Ontario.
   tells you how much longer you can stay where you are ("you have 18 min more at the library")
 - **A place to eat on your way**: FoxPaths loads restaurants, cafés and fast food from OpenStreetMap (through the
   Overpass API, cached for a week in your browser) and picks the one with the smallest detour that fits your buses
+- **Your places, your names**: save any place with your own name and a type (restaurant, work, school, friend or
+  family, groceries, gym and so on). With two or more of a type, stops can use "One of my saved restaurants" and
+  FoxPaths picks the one that fits. Restaurants FoxPaths picks for you can be saved straight from the plan
+- **Recent places first** in every Where box, and **Use my location** as a starting point
+- **Pick a date**: FoxPaths chooses the weekday, Saturday or Sunday schedule, treats Ontario holidays as Sunday service,
+  and warns when a date is past the end of the schedules on file
+- **Saved days**: save a day you plan often and load it in one tap. Drag stops by their number to reorder them, and
+  tap a chip under "Here's what I understood" to jump to that part of the form
+- **Take it with you**: add a plan to your calendar (.ics file), copy it as text, or copy a share link that opens the
+  same day for someone else. Share links carry the day inside the link, after the `#`, so nothing is uploaded; Home
+  and Work open as the other person's own places, and "your location" is never included
+- **Backup and example mode**: download your places, saved days and settings as a file and restore them in another
+  browser. Open the site with `?demo` (the "See an example day" link) to try it without changing your saved data
 - **Changing buses**: allow bus changes, at most one, or none (one bus per trip, walking further to it instead).
   Under More options, or say "no transfers" or "one bus only" in Type your day
 - **Which side of the street**: for every bus, which way it's heading, which side of the street to wait on (buses

@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="en-CA">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Plan a whole day of stops around the bus in Peterborough, Newmarket and Waterloo, Ontario.">
 <title>FoxPaths Peterborough</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,6 +36,10 @@
   --land:#151D19; --water:#1C3443; --stop:#0F1513; color-scheme:dark;
 }
 *{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0}
+[hidden]{display:none!important}
+img{max-width:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
 .app{max-width:1340px;margin:0 auto;padding-inline:16px;padding-block:14px 48px}
 h1,h2,h3{margin:0;text-wrap:balance}
@@ -121,6 +130,29 @@ details.more[open]>summary h2::after{content:" −"}
   .mbar .go{padding:10px 14px;font-size:14px;white-space:nowrap}
   .app.view-setup{padding-bottom:90px}
 }
+.days{display:grid;gap:6px;padding-top:4px;border-top:1px dashed var(--line)}
+.daychip{display:inline-flex}
+.daychip .chip:first-child{border-radius:999px 0 0 999px}
+.daychip .chip.x{border-radius:0 999px 999px 0;border-left:0;padding:5px 8px;color:var(--muted)}
+.chip.add{border-style:dashed;color:var(--accent)}
+.chip.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
+.dayname{display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center}
+.dayname input{width:auto;min-width:0;max-width:200px;padding:5px 10px;border:1px solid var(--accent);border-radius:999px;background:var(--bg);font:inherit;font-size:13px}
+.saveform{display:grid;gap:8px;padding:10px 12px;border-radius:8px;background:var(--accent-soft)}
+.saved li.editing{display:block;padding:0;border:0;background:transparent}
+.saved-btns{display:inline-flex;gap:6px;flex:none}
+.filechip{display:inline-flex;align-items:center}
+.demo-link{color:var(--accent)}
+.demo-bar{margin:-6px 0 14px;padding:8px 12px;border-radius:var(--r);background:var(--signal-soft);color:var(--ink);font-size:14px}
+.demo-bar a{color:var(--accent);font-weight:700}
+.sharebar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.gm-save{background:transparent;cursor:pointer;margin-left:6px;font:inherit;font-size:13px;font-weight:700}
+.qchip{font:inherit;font-size:13px;cursor:pointer;color:var(--ink);text-align:left}
+.qchip:hover{border-color:var(--accent)}
+.act-num.grab{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.acts .act{transition:transform .15s ease}
+.acts .act.dragging{transition:none;position:relative;z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.18);background:var(--surface)}
+@media (prefers-reduced-motion: reduce){.acts .act{transition:none}}
 .ac{position:relative}
 .ac>label{font-size:13px;color:var(--muted)}
 .ac-list{position:absolute;z-index:20;left:0;right:0;top:calc(100% - 18px);margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:320px;overflow:auto}
@@ -226,6 +258,7 @@ details.more[open]>summary h2::after{content:" −"}
     <span class="demo-pill" id="city-pill" hidden></span>
   </header>
 
+  <div class="demo-bar" id="demo-bar" hidden>Example mode: try anything, nothing is saved. <a href="./">Back to your own plans</a></div>
   <nav class="cities" id="cities" aria-label="City"></nav>
 
   <div class="tabs" role="tablist">
@@ -243,6 +276,7 @@ details.more[open]>summary h2::after{content:" −"}
     <p id="city-source"></p>
     <p>Walking times are straight-line distance with a detour allowance at about 4.8 km/h, so real walks may differ. Always check the official schedule before you travel.</p>
     <p>Restaurants and cafés for "a place to eat on your way" come from OpenStreetMap (© OpenStreetMap contributors), loaded through the Overpass API.</p>
+    <p>Holidays: FoxPaths treats Ontario statutory holidays and the Civic Holiday as Sunday service. Some agencies run a separate holiday schedule, so check before you travel.</p>
     <p>Google Maps buttons open one leg at a time, because Google Maps doesn't support multi-stop trips by transit. Google shows its own live bus options, which may differ from this plan.</p>
   </footer>
 </div>
@@ -253,8 +287,8 @@ details.more[open]>summary h2::after{content:" −"}
 // Each city's data file sets window.FOXPATH_CITIES[id]. Files load only when that city is opened.
 const CITY_LIST=[
   {id:'peterborough',name:'Peterborough',file:'data/peterborough.js'},
-  {id:'newmarket',name:'Newmarket',file:'data/newmarket.js'},
-  {id:'waterloo',name:'Waterloo',file:'data/waterloo.js'},
+  {id:'newmarket',name:'Newmarket',file:'data/newmarket.js',validUntil:'2026-10-31'},
+  {id:'waterloo',name:'Waterloo',file:'data/waterloo.js',validUntil:'2026-12-20'},
 ];
 let BUNDLE,LON0,LAT0,KX,KY,PLACES,CATS,ROUTES,TIMED_IDS,placeById,NET;
 const EXTRA={}; // per city: restaurants and cafés loaded from OpenStreetMap
@@ -277,13 +311,26 @@ function setCustomPlaces(c){
     const o=c[k],p=list.find(b=>b.id===k);
     if(o&&p)Object.assign(p,toXY(o.lon,o.lat),{sub:o.label,q:o.label,custom:true});
   }
-  (c.saved||[]).forEach(s=>list.push({id:s.id,n:s.n,sub:s.sub,cat:'saved',q:s.q,custom:true,...toXY(s.lon,s.lat)}));
+  (c.saved||[]).forEach(s=>list.push({id:s.id,n:s.n,sub:s.sub,cat:'saved',stype:s.type||'other',from:s.from,q:s.q,custom:true,...toXY(s.lon,s.lat)}));
+  if(c.here)list.push({id:'here',n:'Your location',sub:'Where you were when you tapped "Use my location"',cat:'here',
+    q:`${c.here.lat.toFixed(6)},${c.here.lon.toFixed(6)}`,aliases:['here','my location','current location','where i am'],custom:true,...toXY(c.here.lon,c.here.lat)});
   const extra=EXTRA[BUNDLE.id]||[];
   extra.forEach(p=>{if(!list.some(q=>q.id===p.id))list.push(p);});
-  CATS={...(BUNDLE.cats||{}),...(extra.length?{food:'A place to eat on your way'}:{})};
+  const savedOf=t=>(c.saved||[]).filter(s=>(s.type||'other')===t).length;
+  CATS={...(BUNDLE.cats||{}),...(extra.length||savedOf('food')?{food:'A place to eat on your way'}:{})};
+  PLACE_TYPES.forEach(([t,,plural])=>{if(savedOf(t)>=2)CATS['my-'+t]='One of my saved '+plural;});
   PLACES=list;placeById=Object.fromEntries(PLACES.map(p=>[p.id,p]));
 }
 const cityLonLat=(x,y)=>[x/KX+LON0,y/KY+LAT0];
+// kinds of place you can save: [type, label, plural for "one of my …"]
+const PLACE_TYPES=[['food','Restaurant or café','restaurants'],['work','Work or business','workplaces'],['school','School','schools'],
+  ['friend','Friend or family','friends\' places'],['groceries','Groceries','grocery stores'],['shop','Shop','shops'],
+  ['gym','Gym or sports','gyms'],['health','Health or appointment','health places'],['home','Home','homes'],['other','Other','places']];
+// every place in a category: the city's own, plus saved places of the same type ("my-food" = only saved ones)
+function inCat(c){
+  if(c.startsWith('my-'))return PLACES.filter(p=>p.cat==='saved'&&p.stype===c.slice(3));
+  return PLACES.filter(p=>p.cat===c||(p.cat==='saved'&&p.stype===c));
+}
 
 /* ================= NETWORK ================= */
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
@@ -451,7 +498,7 @@ function searchDays(inp,R,endFrom,endTo){
   const fixedAt=j=>{const a=acts[j];return a&&!a.place.startsWith('any:')?placeById[a.place]:null;};
   const cand=acts.map((a,k)=>{
     if(!a.place.startsWith('any:'))return [placeById[a.place]];
-    const list=PLACES.filter(p=>p.cat===a.place.slice(4)&&R.near(p).length);
+    const list=inCat(a.place.slice(4)).filter(p=>R.near(p).length);
     if(list.length<=8)return list;
     // many choices (like every restaurant in town): keep the 8 with the smallest detour between
     // where you're coming from and where you're going next
@@ -554,8 +601,10 @@ function solve(inp){
   if(res.leaves.length)return {ok:true,picks:pickOptions(res.leaves,inp),count:res.leaves.length,truncated:res.truncated,R};
   // diagnose
   const reasons=[];
-  const placeIds=[inp.start.place,inp.end.place,...inp.acts.flatMap(a=>a.place.startsWith('any:')?PLACES.filter(p=>p.cat===a.place.slice(4)).map(p=>p.id):[a.place])];
-  const far=[...new Set(placeIds)].map(id=>placeById[id]).filter(p=>!R.near(p).length);
+  const placeIds=[inp.start.place,inp.end.place,...inp.acts.filter(a=>!a.place.startsWith('any:')).map(a=>a.place)];
+  const far=[...new Set(placeIds)].map(id=>placeById[id]).filter(p=>p&&!R.near(p).length);
+  inp.acts.filter(a=>a.place.startsWith('any:')).forEach(a=>{
+    const c=a.place.slice(4);if(!inCat(c).some(p=>R.near(p).length))reasons.push(`None of the places for "${CATS[c]||c}" are near a bus stop with service then.`);});
   const dayName={weekday:'weekdays',saturday:'Saturdays',sunday:'Sundays and holidays'}[inp.day];
   if(inp.maxRides)reasons.push(inp.maxRides===1?'You asked for no bus changes, so only trips you can make on a single bus count. Allow one change, or raise the max walk to a stop so FoxPaths can walk you to a bus that goes straight there.':'You asked for at most one bus change. Allowing more changes may find a plan.');
   if(far.length)reasons.push(`On ${dayName}, no stop with bus service is within ${inp.maxWalk} min walk of ${far.map(p=>p.n).join(' or ')}. Raise the max walk to a stop, pick another day, or choose a different place.`);
@@ -580,6 +629,36 @@ if(typeof module!=='undefined')module.exports={solve,fmt,fmtDur,parseT,setCity,s
 <script>
 /* ================= UI ================= */
 const DAY_TODAY=['sunday','weekday','weekday','weekday','weekday','weekday','saturday'][new Date().getDay()];
+const DEMO=new URLSearchParams(location.search).has('demo'); // example mode: nothing is saved
+/* ---- dates and Ontario holidays ---- */
+const pad2=n=>String(n).padStart(2,'0');
+const isoDate=d=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+function nthWeekday(y,m,dow,n){const d=new Date(y,m,1);d.setDate(1+((dow-d.getDay()+7)%7)+7*(n-1));return d;}
+function easter(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),
+  h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;return new Date(y,mo-1,da);}
+function holidays(y){
+  const v=new Date(y,4,24);v.setDate(24-((v.getDay()+6)%7)); // Monday on or before May 24
+  const gf=easter(y);gf.setDate(gf.getDate()-2);
+  const list=[[new Date(y,0,1),"New Year's Day"],[nthWeekday(y,1,1,3),'Family Day'],[gf,'Good Friday'],[v,'Victoria Day'],
+    [new Date(y,6,1),'Canada Day'],[nthWeekday(y,7,1,1),'Civic Holiday'],[nthWeekday(y,8,1,1),'Labour Day'],
+    [nthWeekday(y,9,1,2),'Thanksgiving'],[new Date(y,11,25),'Christmas Day'],[new Date(y,11,26),'Boxing Day']];
+  return Object.fromEntries(list.map(([d,n])=>[isoDate(d),n]));
+}
+function dayInfo(iso){
+  const [y,m,d]=iso.split('-').map(Number);const dt=new Date(y,m-1,d);
+  const hol=holidays(y)[iso];
+  const day=hol?'sunday':['sunday','weekday','weekday','weekday','weekday','weekday','saturday'][dt.getDay()];
+  return {date:dt,day,hol,label:dt.toLocaleDateString('en-CA',{weekday:'long',month:'short',day:'numeric'})};
+}
+function dateNote(s){
+  if(!s.date)return 'Pick a date, or choose the type of day.';
+  const di=dayInfo(s.date),c=CITY_LIST.find(c=>c.id===store.city);
+  const parts=[di.hol?`${di.label} is ${di.hol}: FoxPaths uses the Sunday and holiday schedule. Holiday service can differ, so check with the transit agency.`
+    :`${di.label}: ${di.day==='weekday'?'weekday':di.day==='saturday'?'Saturday':'Sunday'} schedule.`];
+  if(c&&c.validUntil&&s.date>c.validUntil)parts.push(`The schedules on file run until ${dayInfo(c.validUntil).label.replace(/^\w+, /,'')}, so times after that may have changed.`);
+  return parts.join(' ');
+}
+const dayOf=s=>s.date?dayInfo(s.date).day:s.day;
 function cityDefaults(B){
   const d=B.defaults;
   return {start:{place:'home',from:'10:00',to:'11:00'},end:{place:'home',from:'18:00',to:'19:00'},
@@ -592,17 +671,23 @@ if(!store||!store.cities){
   store={city:'peterborough',cities:{}};
   try{const old=JSON.parse(localStorage.getItem('foxpath-v1'));if(old&&Array.isArray(old.acts))store.cities.peterborough=old;}catch(e){}
 }
-const hashCity=CITY_LIST.find(c=>c.id===location.hash.slice(1));
+const HASH=Object.fromEntries(location.hash.slice(1).split('&').map((x,i)=>i?[x.slice(0,x.indexOf('=')),x.slice(x.indexOf('=')+1)]:['city',x]));
+const hashCity=CITY_LIST.find(c=>c.id===HASH.city);
+let pendingShare=null;
+try{if(HASH.day)pendingShare=JSON.parse(decodeURIComponent(escape(atob(HASH.day.replace(/-/g,'+').replace(/_/g,'/')))));}catch(e){pendingShare=null;}
 if(hashCity)store.city=hashCity.id;
+if(pendingShare&&CITY_LIST.some(c=>c.id===pendingShare.c))store.city=pendingShare.c;
 if(!CITY_LIST.some(c=>c.id===store.city))store.city='peterborough';
 let state=null;
 function useCityState(){
-  state=store.cities[store.city]||cityDefaults(BUNDLE);
+  state=(!DEMO&&store.cities[store.city])||cityDefaults(BUNDLE);
   const def=cityDefaults(BUNDLE);
   for(const k of Object.keys(def))if(state[k]==null)state[k]=def[k];
   if(!state.custom)state.custom={saved:[]};
   setCustomPlaces(state.custom);
-  const okPlace=v=>placeById[v]||(v&&v.startsWith('any:')&&CATS[v.slice(4)]);
+  const okPlace=v=>placeById[v]||(v&&v.startsWith('any:')&&(CATS[v.slice(4)]||v==='any:food'));
+  if(!Array.isArray(state.days))state.days=[];
+  if(!Array.isArray(state.recent))state.recent=[];
   if(!Array.isArray(state.acts))state.acts=def.acts;
   state.acts.forEach(a=>{if(!okPlace(a.place))a.place=def.acts[0].place;});
   ['start','end'].forEach(k=>{if(!placeById[state[k].place])state[k].place='home';});
@@ -611,7 +696,7 @@ function useCityState(){
 let result=null,selected=0,nextId=Date.now()%100000;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function save(){store.cities[store.city]=state;try{localStorage.setItem('foxpaths-v2',JSON.stringify(store));}catch(e){}}
+function save(){if(DEMO)return;store.cities[store.city]=state;try{localStorage.setItem('foxpaths-v2',JSON.stringify(store));}catch(e){}}
 
 const WORK_LABEL=()=>BUNDLE.workLabel||'Work';
 const DUR_CHIPS=['15-30m','30-45m','1h','1-2h','2h+','3h+'];
@@ -635,6 +720,30 @@ function acField(key,label,value,picked){
     ${note?`<span class="ac-note${picked?' ok':''}">${note}</span>`:''}</div>`;
 }
 function durText(a){return DayParse.fmtRange(a.min,a.max);}
+let savingDay=null,pendingSave=null,hereMsg='',dataMsg='';
+const typeName=t=>(PLACE_TYPES.find(x=>x[0]===(t||'other'))||PLACE_TYPES[PLACE_TYPES.length-1])[1];
+function guessType(it){
+  const s=((it.title||'')+' '+(it.sub||'')).toLowerCase();
+  if(it.osm||/restaurant|caf[eé]|coffee|pizza|sushi|burger|kfc|mcdonald|tim hortons|starbucks|diner|bar\b|grill|kitchen|fast food/.test(s))return 'food';
+  if(/no frills|grocer|food basics|metro\b|loblaw|sobeys|freshco|walmart|costco|superstore|zehrs|farm boy/.test(s))return 'groceries';
+  if(/school|university|college|campus|library/.test(s))return 'school';
+  if(/gym|fitness|goodlife|ymca|arena|sports/.test(s))return 'gym';
+  if(/hospital|clinic|dental|dentist|pharmacy|medical|doctor/.test(s))return 'health';
+  if(/mall|store|shop|plaza|centre/.test(s))return 'shop';
+  return 'other';
+}
+function saveForm(){
+  const ps=pendingSave;
+  return `<div class="saveform" role="group" aria-label="${ps.editId?'Edit saved place':'Save this place'}">
+    <span class="eyebrow">${ps.editId?'Edit saved place':'Save this place'}</span>
+    <span class="hint">${esc(ps.sub||'')}</span>
+    <div class="row2">
+      <label class="field"><span>Name</span><input type="text" id="ps-name" value="${esc(ps.n)}" maxlength="40" placeholder="e.g. Mom's, Gym, Favourite pho"></label>
+      <label class="field"><span>Type</span><select id="ps-type">${PLACE_TYPES.map(([t,l])=>`<option value="${t}"${ps.type===t?' selected':''}>${l}</option>`).join('')}</select></label>
+    </div>
+    <div class="chips"><button type="button" class="chip on" data-action="saveplace">Save place</button><button type="button" class="chip" data-action="cancelsave">Cancel</button></div>
+  </div>`;
+}
 function durNote(a){
   const mn=+a.min||0,mx=a.max===''||a.max==null?null:+a.max;
   if(!mn&&mx==null)return 'How long you need here';
@@ -657,7 +766,7 @@ function renderSetup(){
     return `
     <li class="act" data-id="${a.id}">
       <div class="act-head">
-        <span class="act-num" title="${s.reorder?'The app may change the order':'Stop '+(i+1)}">${s.reorder?'·':i+1}</span>
+        <span class="act-num${s.reorder?'':' grab'}" title="${s.reorder?'The app may change the order':'Drag to reorder'}">${s.reorder?'·':i+1}</span>
         <input type="text" id="act-${a.id}-label" value="${esc(a.label)}" placeholder="What you'll do" aria-label="Stop name">
         <button class="icon-btn" data-action="up" data-id="${a.id}" aria-label="Move up" ${i===0?'disabled':''}>↑</button>
         <button class="icon-btn" data-action="down" data-id="${a.id}" aria-label="Move down" ${i===s.acts.length-1?'disabled':''}>↓</button>
@@ -684,12 +793,25 @@ function renderSetup(){
       <textarea id="quick" rows="3" placeholder="e.g. ${esc(quickExample())}" spellcheck="false">${esc(s.quick||'')}</textarea>
       <div class="quick-row"><button class="go" data-action="parse">Plan my day</button><span class="hint">Or set it up step by step below. Plans update as you change things.</span></div>
       <div id="quick-out">${quickOutHTML()}</div>
+      <div class="days">
+        <span class="eyebrow">Saved days</span>
+        <div class="chips">
+          ${s.days.map((d,i)=>`<span class="daychip"><button type="button" class="chip" data-action="loadday" data-i="${i}" title="Load this day">${esc(d.name)}</button><button type="button" class="chip x" data-action="delday" data-i="${i}" aria-label="Delete ${esc(d.name)}">×</button></span>`).join('')}
+          ${savingDay?`<span class="dayname"><input type="text" id="dayname" placeholder="Name this day" value="${esc(savingDay.name||'')}" maxlength="40"><button type="button" class="chip on" data-action="savedayok">Save</button><button type="button" class="chip" data-action="savedaycancel">Cancel</button></span>`
+            :`<button type="button" class="chip add" data-action="saveday">+ Save this day</button>`}
+        </div>
+        ${s.days.length?'':'<span class="hint">Save a day you plan often, like a study day, and load it in one tap.</span>'}
+      </div>
     </div>
     <div class="block">
       <h2>Start</h2>
-      <label class="field"><span>Day</span><select id="day">${[['weekday','Weekday (Mon to Fri)'],['saturday','Saturday'],['sunday','Sunday or holiday']].map(([v,l])=>`<option value="${v}"${s.day===v?' selected':''}>${l}</option>`).join('')}</select></label>
+      <div class="row2">
+        <label class="field"><span>Date</span><input type="date" id="date" value="${esc(s.date||'')}"></label>
+        <label class="field"><span>Schedule</span><select id="day"${s.date?' disabled':''}>${[['weekday','Weekday'],['saturday','Saturday'],['sunday','Sunday/holiday']].map(([v,l])=>`<option value="${v}"${dayOf(s)===v?' selected':''}>${l}</option>`).join('')}</select></label>
+      </div>
+      <p class="hint" id="date-note">${esc(dateNote(s))}</p>
       ${pickField('start',s.start.place,'From',false)}
-      <button type="button" class="chip now" data-action="now">Leave now</button>
+      <div class="chips"><button type="button" class="chip now" data-action="now">Leave now</button><button type="button" class="chip" data-action="here">Use my location</button><span class="hint" id="here-msg" role="status">${esc(hereMsg)}</span></div>
       <div class="row3">
         <label class="field"><span>Leave between</span><input type="time" step="300" id="start-from" value="${esc(s.start.from)}"></label>
         <span class="to">and</span>
@@ -727,9 +849,18 @@ function renderSetup(){
       <h2>Your places</h2>
       ${acField('home','Home',s.addr.home,s.custom.home)}
       ${acField('work',WORK_LABEL(),s.addr.work,s.custom.work)}
-      ${acField('new','Save another place','',null)}
-      ${(s.custom.saved||[]).length?`<ul class="saved">${s.custom.saved.map(p=>`<li><div><strong>${esc(p.n)}</strong><span>${esc(p.sub)}</span></div><button class="icon-btn" data-action="unsave" data-pid="${p.id}" aria-label="Remove ${esc(p.n)}">✕</button></li>`).join('')}</ul>`:''}
+      ${pendingSave&&!pendingSave.editId?'':acField('new','Save another place','',null)}
+      ${pendingSave&&!pendingSave.editId?saveForm():''}
+      ${(s.custom.saved||[]).length?`<ul class="saved">${s.custom.saved.map(p=>pendingSave&&pendingSave.editId===p.id?`<li class="editing">${saveForm()}</li>`
+        :`<li><div><strong>${esc(p.n)}</strong><span>${esc(typeName(p.type))} · ${esc(p.sub)}</span></div><span class="saved-btns"><button class="icon-btn" data-action="editplace" data-pid="${p.id}" aria-label="Rename ${esc(p.n)}" title="Rename or change type">✎</button><button class="icon-btn" data-action="unsave" data-pid="${p.id}" aria-label="Remove ${esc(p.n)}">✕</button></span></li>`).join('')}</ul>`:''}
       <p class="hint">Type part of an address or a business name, like "561" or "KFC", and pick a suggestion; the closest come first. Suggestions come from <a href="https://photon.komoot.io" target="_blank" rel="noopener">Photon</a> using <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> data, so what you type is sent to that service. Your places are saved only in this browser.</p>
+    </div>
+    <div class="block">
+      <h2>Your data</h2>
+      <p class="hint">Your places, saved days and settings live only in this browser. Back them up to move them to another browser or device, or to keep them safe if you clear your browsing data.</p>
+      <div class="chips"><button type="button" class="chip" data-action="backup">Download a backup</button><label class="chip filechip">Restore from a backup<input type="file" id="restore" accept="application/json,.json" hidden></label></div>
+      <span class="hint" id="data-msg" role="status">${esc(dataMsg)}</span>
+      ${DEMO?'':`<a class="hint demo-link" href="?demo#${store.city}">See an example day</a>`}
     </div>`;
 }
 function readSetup(){
@@ -743,7 +874,8 @@ function readSetup(){
     return {...a,label,auto:a.auto&&label===a.label,min:d?d.min:a.min,max:d?(d.max==null?'':d.max):a.max,after:v(`act-${a.id}-after`),by:v(`act-${a.id}-by`)};
   });
   state.reorder=document.getElementById('reorder')?.checked||false;
-  state.day=v('day')||state.day;
+  state.date=v('date');
+  state.day=state.date?dayInfo(state.date).day:(v('day')||state.day);
   state.addr={home:v('addr-home'),work:v('addr-work')};
   state.goal=v('goal')||state.goal;
   state.rides=v('rides')||state.rides||'any';
@@ -759,14 +891,14 @@ function toInput(){
     end:state.end.flex?{place:state.end.place,from:0,to:1440+180}:{place:state.end.place,from:T(state.end.from)??0,to:T(state.end.to)??1439},
     acts:state.acts.map((a,i)=>{const mn=Math.max(0,parseFloat(a.min)||0);let mx=parseFloat(a.max);mx=Number.isFinite(mx)&&mx>=mn?mx:null;
       return {id:a.id,label:a.label||'Stop '+(i+1),place:a.place,min:mn,max:mx,after:T(a.after),by:T(a.by)};}),
-    maxRides:state.rides==='1'?1:state.rides==='2'?2:0,day:state.day,reorder:state.reorder,maxWalk:Math.max(1,state.maxWalk),buffer:Math.max(0,state.buffer),walkDirect:Math.max(0,state.walkDirect),goal:state.goal
+    maxRides:state.rides==='1'?1:state.rides==='2'?2:0,day:dayOf(state),reorder:state.reorder,maxWalk:Math.max(1,state.maxWalk),buffer:Math.max(0,state.buffer),walkDirect:Math.max(0,state.walkDirect),goal:state.goal
   };
 }
 function leaveNow(){
   const d=new Date(),m=Math.floor((d.getHours()*60+d.getMinutes())/5)*5;
   const hm=x=>`${String(Math.floor(x/60)%24).padStart(2,'0')}:${String(x%60).padStart(2,'0')}`;
   const day=['sunday','weekday','weekday','weekday','weekday','weekday','saturday'][d.getDay()];
-  state.start.from=hm(m);state.start.to=hm(Math.min(m+90,23*60+55));state.day=day;
+  state.start.from=hm(m);state.start.to=hm(Math.min(m+90,23*60+55));state.day=day;state.date=isoDate(d);
 }
 let planTimer=null;
 function schedulePlan(delay){clearTimeout(planTimer);planTimer=setTimeout(run,delay??450);}
@@ -809,6 +941,8 @@ function boardHelp(st){
     <a class="sv" href="${sv}" target="_blank" rel="noopener">See this stop in Street View ↗</a></div></div>`;
 }
 function gq(p){if(p.id==='home')return state.addr.home||null;if(p.id==='work')return state.addr.work||null;return p.q;}
+// a stop picked by the app (like a restaurant) can be saved straight from the plan
+function savedFrom(p){return p&&(state.custom.saved||[]).some(s=>s.from===p.id||(s.n===p.n&&Math.abs(((s.lon-LON0)*KX)-p.x)<0.02));}
 function gmLink(from,to,walk){
   const a=gq(from),b=gq(to);
   if(!a||!b)return `<span class="gm gm-off">Add an address for ${esc((!a?from:to).n)} under Your places to get a Google Maps link</span>`;
@@ -838,7 +972,8 @@ function planRows(plan,inp){
       if(early>0)notes.push(`You arrive ${fmtDur(early)} before it starts`);
       if(act.max!=null&&d>act.max)notes.push(`includes ${fmtDur(d-act.max)} spare beyond your ${fmtDur(act.max)} max`);
       else notes.push(`your range: ${fmtDur(act.min)}${act.max!=null?' to '+fmtDur(act.max):' or more'}`);
-      rows.push({k:'act',t:s,main:`${esc(act.label)} at ${esc(leg.to.n)}`,dur:d,until:plan.legs[k+1].op.leave,sub:notes.join(' · '),link:legLink(k+1)});
+      const canSave=leg.to.osm&&!savedFrom(leg.to);
+      rows.push({k:'act',t:s,main:`${esc(act.label)} at ${esc(leg.to.n)}`,dur:d,until:plan.legs[k+1].op.leave,sub:notes.join(' · '),link:legLink(k+1)+(canSave?`<button type="button" class="gm gm-save" data-saveplace="${leg.to.id}">Save ${esc(leg.to.n)} to your places</button>`:'')});
     }
   });
   rows.push({k:'end',t:plan.end,main:`Arrive at ${esc(endP.n)}`});
@@ -879,6 +1014,12 @@ function renderMain(){
     <div class="status"><h2>${result.picks.length} plan${result.picks.length>1?'s':''} for your day</h2>
       <p>Compared ${result.count.toLocaleString()} workable schedules${result.truncated?' (search capped)':''} in ${result.ms} ms</p></div>
     <div class="options">${result.picks.map((p,i)=>optionCard(p,i,inp)).join('')}</div>
+    <div class="sharebar">
+      <button type="button" class="chip" data-share="ics">Add to calendar</button>
+      <button type="button" class="chip" data-share="text">Copy as text</button>
+      <button type="button" class="chip" data-share="link">Copy share link</button>
+      <span class="hint" id="share-msg" role="status">${esc(shareMsg)}</span>
+    </div>
     <div class="detail">
       <div class="panel">
         <div class="panel-head"><span class="eyebrow">Step by step · ${esc(pick.tag)}</span></div>
@@ -949,16 +1090,21 @@ function setView(v){
 }
 document.querySelector('.tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-view]');if(b)setView(b.dataset.view);});
 const CAT_LABEL={food:'Eat',study:'Study',shop:'Shop',groceries:'Groceries',work:'Work',health:'Appointment',transit:'Transfer',park:'Visit',school:'Class',saved:'',home:'Home'};
+const TYPE_ACT={food:'Eat',work:'Work',school:'Class',friend:'Visit',groceries:'Groceries',shop:'Shop',gym:'Workout',health:'Appointment',home:'Home'};
 function setPlace(key,val){
+  if(val&&!val.startsWith('any:')){state.recent=[val,...(state.recent||[]).filter(x=>x!==val)].slice(0,6);}
   if(key==='start')state.start.place=val;
   else if(key==='end')state.end.place=val;
   else if(key.startsWith('act-')){
     const a=state.acts.find(x=>'act-'+x.id===key);if(!a)return;
     a.place=val;
-    if(!a.label||a.auto){const p=placeById[val];const lab=val.startsWith('any:')?(CAT_LABEL[val.slice(4)]||''):p?(CAT_LABEL[p.cat]||p.n.split(',')[0]):'';if(lab){a.label=lab;a.auto=true;}}
+    if(!a.label||a.auto){const p=placeById[val],c=val.startsWith('any:')?val.slice(4).replace(/^my-/,''):'';
+      const lab=c?(CAT_LABEL[c]||TYPE_ACT[c]||''):p?(p.cat==='saved'?(TYPE_ACT[p.stype]||p.n):(CAT_LABEL[p.cat]||p.n.split(',')[0])):'';if(lab){a.label=lab;a.auto=true;}}
   }
 }
 $('#setup').addEventListener('input',e=>{
+  if(e.target.id==='ps-name'){pendingSave.n=e.target.value;return;}
+  if(e.target.id==='dayname'){savingDay.name=e.target.value;return;}
   if(e.target.closest('.ac')||e.target.id==='quick'){if(e.target.id==='quick'){state.quick=e.target.value;save();}return;}
   readSetup();
   if(e.target.id&&e.target.id.endsWith('-label')){const g=$('#goal');if(g)g.innerHTML=goalOptions();}
@@ -970,13 +1116,17 @@ $('#setup').addEventListener('input',e=>{
   schedulePlan();
 });
 $('#setup').addEventListener('change',e=>{
-  if(e.target.closest('.ac')||e.target.id==='quick')return;
+  if(e.target.closest('.ac')||e.target.id==='quick'||e.target.id==='ps-name'||e.target.id==='ps-type'||e.target.id==='dayname')return;
+  if(e.target.id==='restore'){restoreBackup(e.target.files&&e.target.files[0]);return;}
   readSetup();
+  if(e.target.id==='date'){save();renderSetup();}
   if(e.target.id==='endflex'&&state.end.flex){state.goal='smooth';}
   if(e.target.id==='reorder'||e.target.id==='endflex'||e.target.id==='rides'){save();renderSetup();}
   schedulePlan(150);
 });
 $('#setup').addEventListener('click',e=>{
+  const j=e.target.closest('[data-jump]');
+  if(j){const el=document.getElementById(j.dataset.jump);if(el){el.scrollIntoView({block:'center',behavior:'smooth'});el.focus({preventScroll:true});}return;}
   const b=e.target.closest('[data-action]');if(!b)return;
   e.preventDefault();readSetup();
   const i=state.acts.findIndex(a=>a.id===b.dataset.id);
@@ -993,6 +1143,25 @@ $('#setup').addEventListener('click',e=>{
       state.acts.forEach(a=>{if(a.place===id)a.place='';});['start','end'].forEach(k=>{if(state[k].place===id)state[k].place='home';});
       setCustomPlaces(state.custom);break;}
     case 'see':setView('plans');window.scrollTo({top:0,behavior:'smooth'});return;
+    case 'saveday':savingDay={name:''};renderSetup();setTimeout(()=>$('#dayname')?.focus(),0);return;
+    case 'savedaycancel':savingDay=null;renderSetup();return;
+    case 'savedayok':{
+      const name=(($('#dayname')?.value)||'').trim()||'My day '+(state.days.length+1);
+      const snap=daySnapshot();const k=state.days.findIndex(d=>d.name.toLowerCase()===name.toLowerCase());
+      if(k>=0)state.days[k]={name,snap};else state.days.push({name,snap});
+      savingDay=null;save();renderSetup();return;}
+    case 'loadday':{const d=state.days[+b.dataset.i];if(d){applySnapshot(d.snap);quickInfo=null;}break;}
+    case 'delday':state.days.splice(+b.dataset.i,1);save();renderSetup();return;
+    case 'here':useMyLocation();return;
+    case 'editplace':{const s=state.custom.saved.find(x=>x.id===b.dataset.pid);if(s)pendingSave={editId:s.id,n:s.n,type:s.type||'other',sub:s.sub};renderSetup();setTimeout(()=>$('#ps-name')?.focus(),0);return;}
+    case 'cancelsave':pendingSave=null;renderSetup();return;
+    case 'saveplace':{
+      const ps=pendingSave;if(!ps)return;
+      const n=(($('#ps-name')?.value)||'').trim()||ps.n||'Saved place',type=$('#ps-type')?.value||'other';
+      if(ps.editId){const s=state.custom.saved.find(x=>x.id===ps.editId);if(s){s.n=n;s.type=type;}}
+      else savePlace(ps.it,n,type);
+      pendingSave=null;setCustomPlaces(state.custom);break;}
+    case 'backup':downloadBackup();return;
   }
   save();renderSetup();schedulePlan(100);
 });
@@ -1001,18 +1170,18 @@ $('#setup').addEventListener('click',e=>{
 let quickInfo=null; // what the reader understood, shown under the box
 function quickOutHTML(){
   if(!quickInfo)return '';
-  const chip=(t,cls)=>`<span class="qchip${cls?' '+cls:''}">${t}</span>`;
+  const chip=(t,cls,jump)=>`<button type="button" class="qchip${cls?' '+cls:''}" data-jump="${jump}" title="Go to this part of the form">${t}</button>`;
   const parts=[];
   const fmtT=s=>s?fmt(parseT(s)):'';
-  if(quickInfo.start)parts.push(chip(`Leave ${esc(placeName(state.start.place))} ${quickInfo.now?'any time from now':fmtT(state.start.from)+'–'+fmtT(state.start.to)}`));
+  if(quickInfo.start)parts.push(chip(`Leave ${esc(placeName(state.start.place))} ${quickInfo.now?'any time from now':fmtT(state.start.from)+'–'+fmtT(state.start.to)}`,'','addr-start'));
   state.acts.forEach((a,i)=>{
     const where=a.place?placeName(a.place):'no place yet';
     const lim=[a.after?'after '+fmtT(a.after):'',a.by?'done by '+fmtT(a.by):''].filter(Boolean).join(', ');
-    parts.push(chip(`${i+1}. ${esc(a.label||'Stop')} · ${esc(where)} · ${esc(durNote(a).replace(/^About /,''))}${lim?' · '+esc(lim):''}`,a.place?'':'warn'));
+    parts.push(chip(`${i+1}. ${esc(a.label||'Stop')} · ${esc(where)} · ${esc(durNote(a).replace(/^About /,''))}${lim?' · '+esc(lim):''}`,a.place?'':'warn',a.place?`act-${a.id}-dur`:`addr-act-${a.id}`));
   });
-  if(quickInfo.end)parts.push(chip(state.end.flex?`${esc(placeName(state.end.place))} · no set time, least waiting`:`${esc(placeName(state.end.place))} ${fmtT(state.end.from)}–${fmtT(state.end.to)}`));
+  if(quickInfo.end)parts.push(chip(state.end.flex?`${esc(placeName(state.end.place))} · no set time, least waiting`:`${esc(placeName(state.end.place))} ${fmtT(state.end.from)}–${fmtT(state.end.to)}`,'','addr-end'));
   const notes=[...quickInfo.notes];
-  return `<div class="qout" role="status"><span class="eyebrow">Here's what I understood</span><div class="qchips">${parts.join('')}</div>${notes.length?`<ul class="qnotes">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}<p class="hint">Not quite right? Edit the sentence and press the button again, or change anything below.</p></div>`;
+  return `<div class="qout" role="status"><span class="eyebrow">Here's what I understood</span><div class="qchips">${parts.join('')}</div>${notes.length?`<ul class="qnotes">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}<p class="hint">Tap a chip to jump to it, or edit the sentence and press the button again.</p></div>`;
 }
 async function photonFirst(q){
   const c=acCenter(),[clon,clat]=cityLonLat(c.x,c.y);
@@ -1023,17 +1192,41 @@ async function photonFirst(q){
     .filter(f=>Math.hypot(f.x,f.y)<30).sort((a,b)=>Math.hypot(a.x-c.x,a.y-c.y)-Math.hypot(b.x-c.x,b.y-c.y));
   return found[0]||null;
 }
-function savePlace(it){
+function savePlace(it,name,type){
   const id='u'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-  state.custom.saved=[...(state.custom.saved||[]),{id,n:it.title,sub:it.sub||it.q,q:it.q,lon:it.lon,lat:it.lat}];
+  const [lon,lat]=it.lon!=null?[it.lon,it.lat]:cityLonLat(it.x,it.y);
+  state.custom.saved=[...(state.custom.saved||[]),{id,n:name||it.title,sub:it.sub||it.q,q:it.q,lon,lat,type:type||guessType(it),...(it.from?{from:it.from}:{})}];
   setCustomPlaces(state.custom);return id;
+}
+function daySnapshot(){
+  const s=state;
+  return structuredClone({start:s.start,end:s.end,acts:s.acts.map(a=>({...a,auto:false})),day:s.day,date:s.date||'',reorder:s.reorder,goal:s.goal,rides:s.rides||'any',maxWalk:s.maxWalk,buffer:s.buffer,walkDirect:s.walkDirect,quick:s.quick||''});
+}
+function applySnapshot(snap){
+  const sn=structuredClone(snap);
+  const ok=v=>!v||placeById[v]||v.startsWith('any:');
+  Object.assign(state,sn);
+  state.acts=state.acts.map(a=>({...a,id:'a'+(++nextId),place:ok(a.place)?a.place:''}));
+  if(sn.goal&&sn.goal.startsWith('max:')){const k=snap.acts.findIndex(a=>'max:'+a.id===sn.goal);state.goal=k>=0?'max:'+state.acts[k].id:'smooth';}
+  ['start','end'].forEach(k=>{if(!placeById[state[k].place])state[k].place='home';});
+}
+function useMyLocation(){
+  if(!navigator.geolocation){hereMsg="This browser can't share your location.";renderSetup();return;}
+  hereMsg='Finding you…';renderSetup();
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const lon=pos.coords.longitude,lat=pos.coords.latitude,x=(lon-LON0)*KX,y=(lat-LAT0)*KY;
+    if(Math.hypot(x,y)>30){hereMsg=`You seem to be more than 30 km from ${BUNDLE.name}, so I left your start as it was.`;renderSetup();return;}
+    state.custom.here={lon,lat,t:Date.now()};setCustomPlaces(state.custom);setPlace('start','here');
+    hereMsg='Starting from your location.';save();renderSetup();schedulePlan(50);
+  },err=>{hereMsg=err.code===1?'Location is blocked for this site. Allow it in your browser settings, or pick a place.':"Couldn't find your location. Try again, or pick a place.";renderSetup();},
+  {enableHighAccuracy:true,timeout:15000,maximumAge:60000});
 }
 async function applyQuick(){
   const text=($('#quick')?.value||'').trim();state.quick=text;
   if(!text){quickInfo={notes:['Type your day first, for example: '+quickExample()]};renderSetup();return;}
   const r=DayParse.parseDay(text,{places:PLACES,cats:CATS,now:new Date()});
   const notes=[];
-  if(r.day)state.day=r.day;
+  if(r.day){state.day=r.day;state.date='';}
   if(r.reorder!=null)state.reorder=r.reorder;
   if(r.maxRides){state.rides=String(r.maxRides);state.moreOpen=true;}
   if(r.start){if(r.start.place)state.start.place=r.start.place;if(r.start.from){state.start.from=r.start.from;state.start.to=r.start.to;}}
@@ -1084,9 +1277,14 @@ function acLocal(key,q){
   if(pick&&any)Object.entries(CATS).forEach(([k,v])=>{if(hit(v+' any '+k))out.push({kind:'cat',value:'any:'+k,title:v,sub:'FoxPaths picks the one that fits your day best',local:true,first:true});});
   const c0=acCenter();
   const eats=ql?PLACES.filter(p=>p.osm&&hit(p.n+' '+(p.sub||''))).sort((a,b)=>Math.hypot(a.x-c0.x,a.y-c0.y)-Math.hypot(b.x-c0.x,b.y-c0.y)).slice(0,8):[];
-  [...PLACES.filter(p=>!p.osm),...eats].forEach(p=>{
+  const rec=pick&&!ql?(state.recent||[]):[];
+  const recentOsm=rec.map(id=>placeById[id]).filter(p=>p&&p.osm);
+  [...PLACES.filter(p=>!p.osm),...recentOsm,...eats].forEach(p=>{
     if(!pick&&(p.cat==='saved'||p.id===key))return;
-    if(hit(p.n+' '+(p.sub||'')+' '+p.id))out.push({kind:'place',id:p.id,title:p.n,sub:p.cat==='saved'?'Saved place · '+(p.sub||''):(p.sub||''),x:p.x,y:p.y,local:true,q:p.q||p.n});
+    if(out.some(o=>o.id===p.id))return;
+    const r=rec.indexOf(p.id);
+    const sub=p.cat==='saved'?typeName(p.stype)+' · '+(p.sub||''):(p.sub||'');
+    if(hit(p.n+' '+(p.sub||'')+' '+p.id+' '+(p.aliases||[]).join(' ')))out.push({kind:'place',id:p.id,title:p.n,sub:r>=0?'Recent · '+sub:sub,rec:r>=0?r:null,x:p.x,y:p.y,local:true,q:p.q||p.n});
   });
   return out;
 }
@@ -1114,7 +1312,7 @@ function acShow(key,items,msg){
   const list=$('#ac-list-'+key),input=$('#addr-'+key);if(!list)return;
   const c=acCenter();
   items.forEach(i=>i.d=i.x==null?0:Math.hypot(i.x-c.x,i.y-c.y));
-  items.sort((a,b)=>(!!b.first-!!a.first)||(!!b.local-!!a.local)||a.d-b.d);
+  items.sort((a,b)=>(!!b.first-!!a.first)||((a.rec??99)-(b.rec??99))||(!!b.local-!!a.local)||a.d-b.d);
   AC.results[key]=items;AC.active[key]=-1;
   list.innerHTML=items.map((it,i)=>`<li role="option" id="ac-${key}-${i}" data-ac-pick="${key}" data-i="${i}" class="${it.kind==='cat'?'is-cat':''}"><span class="ac-t">${esc(it.title)}</span><span class="ac-s">${esc([it.sub,it.kind==='cat'||it.d<0.05?'':(it.d<1?Math.round(it.d*1000)+' m':it.d.toFixed(1)+' km')+' away'].filter(Boolean).join(' · '))}</span></li>`).join('')
     +(msg?`<li class="ac-msg" aria-disabled="true">${esc(msg)}</li>`:'');
@@ -1136,9 +1334,12 @@ function acPick(key,i){
     setPlace(key,val);
   }else{
     const [lon,lat]=it.lon!=null?[it.lon,it.lat]:cityLonLat(it.x,it.y);
-    if(key==='home'||key==='work'){state.custom[key]={lon,lat,label:it.q};state.addr[key]=it.q;}
-    else savePlace({...it,lon,lat});
-    setCustomPlaces(state.custom);
+    if(key==='home'||key==='work'){state.custom[key]={lon,lat,label:it.q};state.addr[key]=it.q;setCustomPlaces(state.custom);}
+    else{
+      const base={title:it.title,sub:it.sub||it.q,q:it.q,lon,lat,osm:it.osm,...(it.kind==='place'&&placeById[it.id]?.osm?{from:it.id}:{})};
+      pendingSave={it:base,n:it.title,type:guessType({...base,osm:it.kind==='place'&&placeById[it.id]?.osm}),sub:base.sub};
+      save();renderSetup();setTimeout(()=>{const n=$('#ps-name');if(n){n.focus();n.select();}},0);return;
+    }
   }
   save();renderSetup();schedulePlan(50);
 }
@@ -1172,10 +1373,14 @@ $('#setup').addEventListener('focusout',e=>{const box=e.target.closest('.ac');if
 
 /* ---------- restaurants and cafés from OpenStreetMap (Overpass API) ---------- */
 const EAT_KIND={restaurant:'Restaurant',fast_food:'Fast food',cafe:'Café',food_court:'Food court'};
-async function loadEats(cityId){
+function cachedEats(cityId){
   if(EXTRA[cityId])return true;
+  try{const c=JSON.parse(localStorage.getItem('foxpaths-eats-'+cityId));if(c&&Date.now()-c.t<7*864e5&&Array.isArray(c.list)){EXTRA[cityId]=c.list;return true;}}catch(e){}
+  return false;
+}
+async function loadEats(cityId){
+  if(cachedEats(cityId))return true;
   const key='foxpaths-eats-'+cityId;
-  try{const c=JSON.parse(localStorage.getItem(key));if(c&&Date.now()-c.t<7*864e5&&Array.isArray(c.list)){EXTRA[cityId]=c.list;return true;}}catch(e){}
   let w=Infinity,s=Infinity,e=-Infinity,n=-Infinity;
   NET.stops.forEach(st=>{const [lon,lat]=cityLonLat(st.x,st.y);w=Math.min(w,lon);e=Math.max(e,lon);s=Math.min(s,lat);n=Math.max(n,lat);});
   const q=`[out:json][timeout:25];nwr["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]["name"](${s.toFixed(4)},${w.toFixed(4)},${n.toFixed(4)},${e.toFixed(4)});out center tags;`;
@@ -1215,7 +1420,144 @@ function updateBar(){
     :`<div><span class="eyebrow">No plan fits yet</span><strong>${esc((result.reasons||[''])[0]).slice(0,90)}</strong></div><button class="go" data-bar="see">Why</button>`;
 }
 
-$('#main').addEventListener('click',e=>{const b=e.target.closest('[data-opt]');if(!b)return;selected=+b.dataset.opt;renderMain();});
+$('#main').addEventListener('click',e=>{
+  const sv=e.target.closest('[data-saveplace]');
+  if(sv){const p=placeById[sv.dataset.saveplace];if(p){savePlace({title:p.n,sub:p.sub,q:p.q,x:p.x,y:p.y,osm:true,from:p.id},p.n,'food');shareMsg=`Saved ${p.n}. Rename it under Your places.`;save();renderSetup();renderMain();}return;}
+  const sh=e.target.closest('[data-share]');if(sh){shareAction(sh.dataset.share);return;}
+  const b=e.target.closest('[data-opt]');if(!b)return;selected=+b.dataset.opt;renderMain();});
+
+/* ---------- take the plan with you ---------- */
+let shareMsg='';
+function setShareMsg(t){shareMsg=t;const m=$('#share-msg');if(m)m.textContent=t;clearTimeout(setShareMsg.t);setShareMsg.t=setTimeout(()=>{shareMsg='';const m2=$('#share-msg');if(m2)m2.textContent='';},6000);}
+async function copyText(text){
+  try{await navigator.clipboard.writeText(text);return true;}
+  catch(e){const t=document.createElement('textarea');t.value=text;t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);t.select();
+    let ok=false;try{ok=document.execCommand('copy');}catch(e2){}t.remove();return ok;}
+}
+const plain=html=>{const d=document.createElement('div');d.innerHTML=html;return d.textContent.replace(/\s+/g,' ').trim();};
+function planDate(){
+  if(state.date)return dayInfo(state.date).date;
+  const want=dayOf(state),d=new Date();d.setHours(0,0,0,0);
+  for(let k=0;k<8;k++){const t=new Date(d);t.setDate(d.getDate()+k);if(dayInfo(isoDate(t)).day===want)return t;}
+  return d;
+}
+function planText(){
+  const pick=result.picks[selected],inp=result.inp,rows=planRows(pick.p,inp);
+  const lines=[`FoxPaths plan · ${BUNDLE.name} · ${planDate().toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric'})}`,''];
+  rows.forEach(r=>{
+    let line=`${fmt(r.t).padStart(8)}  ${plain(r.main)}`;
+    if(r.k==='act')line+=` (${fmtDur(r.dur)}, until ${fmt(r.until)})`;
+    if(r.k==='ride'||r.k==='wait')line+=` · ${plain(r.sub)}`;
+    lines.push(line);
+  });
+  lines.push('','Planned with FoxPaths. Check the official schedule before you travel.');
+  return lines.join('\n');
+}
+function icsFile(){
+  const pick=result.picks[selected],inp=result.inp,p=pick.p,base=planDate();
+  const at=m=>{const d=new Date(base);d.setMinutes(Math.round(m));return `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}T${pad2(d.getHours())}${pad2(d.getMinutes())}00`;};
+  const escI=s=>String(s).replace(/[\\;,]/g,m=>'\\'+m).replace(/\n/g,'\\n');
+  const stamp=new Date().toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';
+  const ev=[];let n=0;
+  const add=(t0,t1,title,desc)=>{if(t1<=t0)return;ev.push(['BEGIN:VEVENT',`UID:foxpaths-${Date.now()}-${n++}@batancr.github.io`,`DTSTAMP:${stamp}`,`DTSTART:${at(t0)}`,`DTEND:${at(t1)}`,`SUMMARY:${escI(title)}`,`DESCRIPTION:${escI(desc)}`,'END:VEVENT'].join('\r\n'));};
+  const startP=placeById[inp.start.place];
+  p.legs.forEach((leg,k)=>{
+    const from=k===0?startP:p.legs[k-1].to;
+    const desc=leg.op.steps.map(st=>st.k==='ride'?`${fmt(st.t0)} ${NET.trips[st.trip].r.id} ${NET.trips[st.trip].r.name} from ${NET.stops[st.from].n} to ${NET.stops[st.to].n}`:st.k==='wait'?`${fmt(st.t0)} wait ${fmtDur(st.t1-st.t0)}`:st.w?`${fmt(st.t0)} walk ${st.w} min`:'').filter(Boolean).join('\n');
+    const buses=leg.op.steps.filter(s=>s.k==='ride').map(s=>NET.trips[s.trip].r.id);
+    add(leg.op.leave,leg.op.arr,`${buses.length?'Bus '+buses.join(' + '):'Walk'}: ${from.n} to ${leg.to.n}`,desc);
+    if(k<p.legs.length-1){const act=inp.acts[p.order[k]];add(leg.s,p.legs[k+1].op.leave,`${act.label} at ${leg.to.n}`,'Planned with FoxPaths');}
+  });
+  return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//FoxPaths//EN','CALSCALE:GREGORIAN',...ev,'END:VCALENDAR'].join('\r\n');
+}
+function download(name,text,type){
+  const url=URL.createObjectURL(new Blob([text],{type}));const a=document.createElement('a');a.href=url;a.download=name;
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
+}
+function shareLink(){
+  const snap=daySnapshot(),used=new Set([snap.start.place,snap.end.place,...snap.acts.map(a=>a.place)]);
+  // your location stays private: a shared day starts from the other person's Home instead
+  ['start','end'].forEach(k=>{if(snap[k].place==='here')snap[k].place='home';});
+  snap.acts.forEach(a=>{if(a.place==='here')a.place='home';});
+  const places=[...used].map(id=>placeById[id]).filter(p=>p&&(p.cat==='saved'||p.osm)).map(p=>{const [lon,lat]=cityLonLat(p.x,p.y);
+    return {id:p.id,n:p.n,sub:p.sub,q:p.q,lon:+lon.toFixed(6),lat:+lat.toFixed(6),type:p.cat==='saved'?p.stype:'food'};});
+  const json=JSON.stringify({v:1,c:BUNDLE.id,s:snap,p:places});
+  const b64=btoa(unescape(encodeURIComponent(json))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  return `${location.origin}${location.pathname}#${BUNDLE.id}&day=${b64}`;
+}
+async function shareAction(kind){
+  if(!result||!result.ok)return;
+  if(kind==='ics'){download('foxpaths-day.ics',icsFile(),'text/calendar');setShareMsg('Calendar file downloaded. Open it to add the plan to your calendar.');}
+  else if(kind==='text'){setShareMsg(await copyText(planText())?'Plan copied. Paste it into a message or note.':"Couldn't copy. Your browser blocked it.");}
+  else if(kind==='link'){const u=shareLink();setShareMsg(await copyText(u)?"Link copied. Home and School/Work open as the other person's own places.":"Couldn't copy the link.");}
+}
+function applyShare(sh){
+  if(!sh||sh.v!==1||!sh.s)return false;
+  const map={};
+  (sh.p||[]).forEach(p=>{
+    const have=(state.custom.saved||[]).find(s=>s.n===p.n&&Math.abs(s.lon-p.lon)<1e-4&&Math.abs(s.lat-p.lat)<1e-4);
+    map[p.id]=have?have.id:savePlace({title:p.n,sub:p.sub,q:p.q,lon:p.lon,lat:p.lat},p.n,p.type);
+  });
+  const s=sh.s,fix=v=>map[v]||v;
+  s.start.place=fix(s.start.place);s.end.place=fix(s.end.place);s.acts.forEach(a=>a.place=fix(a.place));
+  applySnapshot(s);
+  quickInfo={notes:['Opened a shared day. Home and School/Work use your own places, and any places it uses are now in Your places.']};
+  return true;
+}
+
+/* ---------- backup ---------- */
+function downloadBackup(){
+  readSetup();
+  download(`foxpaths-backup-${isoDate(new Date())}.json`,JSON.stringify({app:'FoxPaths',version:2,saved:new Date().toISOString(),store},null,1),'application/json');
+  dataMsg='Backup downloaded.';const m=$('#data-msg');if(m)m.textContent=dataMsg;
+}
+function restoreBackup(file){
+  if(!file)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    let b;try{b=JSON.parse(rd.result);}catch(e){b=null;}
+    if(!b||b.app!=='FoxPaths'||!b.store||!b.store.cities){dataMsg="That file isn't a FoxPaths backup.";renderSetup();return;}
+    let places=0,days=0;
+    for(const [cid,cs] of Object.entries(b.store.cities)){
+      const cur=store.cities[cid];
+      if(!cur){store.cities[cid]=cs;places+=(cs.custom?.saved||[]).length;days+=(cs.days||[]).length;continue;}
+      cur.custom=cur.custom||{saved:[]};cur.custom.saved=cur.custom.saved||[];cur.days=cur.days||[];
+      (cs.custom?.saved||[]).forEach(s=>{if(!cur.custom.saved.some(x=>x.id===s.id)){cur.custom.saved.push(s);places++;}});
+      (cs.days||[]).forEach(d=>{if(!cur.days.some(x=>x.name===d.name)){cur.days.push(d);days++;}});
+      ['home','work'].forEach(k=>{if(!cur.custom[k]&&cs.custom?.[k]){cur.custom[k]=cs.custom[k];cur.addr=cur.addr||{};cur.addr[k]=cs.addr?.[k]||'';}});
+    }
+    state=store.cities[store.city]||state;useCityState();save();
+    dataMsg=`Restored ${places} place${places===1?'':'s'} and ${days} saved day${days===1?'':'s'}.`;renderSetup();schedulePlan(50);
+  };
+  rd.readAsText(file);
+}
+
+/* ---------- drag to reorder stops ---------- */
+let drag=null;
+$('#setup').addEventListener('pointerdown',e=>{
+  const hnd=e.target.closest('.act-num.grab');if(!hnd)return;
+  const li=hnd.closest('.act'),items=[...document.querySelectorAll('.acts > .act')];if(items.length<2)return;
+  e.preventDefault();readSetup();
+  try{hnd.setPointerCapture(e.pointerId);}catch(err){}
+  drag={li,hnd,items,rects:items.map(x=>x.getBoundingClientRect()),from:items.indexOf(li),to:items.indexOf(li),y0:e.clientY};
+  li.classList.add('dragging');
+});
+$('#setup').addEventListener('pointermove',e=>{
+  if(!drag)return;
+  const dy=e.clientY-drag.y0,{rects,from,items}=drag,h=rects[from].height+10;
+  drag.li.style.transform=`translateY(${dy}px)`;
+  const mid=rects[from].top+rects[from].height/2+dy;
+  let to=0;rects.forEach((r,i)=>{if(i!==from&&mid>r.top+r.height/2)to++;});
+  drag.to=to;
+  items.forEach((it,i)=>{if(i===from)return;it.style.transform=from<to&&i>from&&i<=to?`translateY(${-h}px)`:to<from&&i>=to&&i<from?`translateY(${h}px)`:'';});
+});
+function endDrag(){
+  if(!drag)return;const {from,to,items}=drag;
+  items.forEach(it=>it.style.transform='');drag.li.classList.remove('dragging');drag=null;
+  if(to!==from){const [m]=state.acts.splice(from,1);state.acts.splice(to,0,m);save();renderSetup();schedulePlan(80);}
+}
+$('#setup').addEventListener('pointerup',endDrag);
+$('#setup').addEventListener('pointercancel',endDrag);
 
 function renderCityChrome(){
   $('#cities').innerHTML=CITY_LIST.map(c=>`<button data-city="${c.id}" aria-pressed="${c.id===store.city}">${esc(c.name)}</button>`).join('');
@@ -1237,8 +1579,11 @@ async function openCity(id){
   $('#main').innerHTML=`<p class="loading">Loading ${esc(c.name)} bus schedules…</p>`;
   try{await loadCityData(c);if(openId!==id)return;}
   catch(e){$('#main').innerHTML=`<div class="notice"><strong>Couldn't load ${esc(c.name)}'s schedules.</strong><span>Check your connection and reload the page.</span></div>`;return;}
-  store.city=id;setCity(id);computeMapGeom();useCityState();save();quickInfo=null;
+  store.city=id;setCity(id);computeMapGeom();cachedEats(id);useCityState();quickInfo=null;pendingSave=null;savingDay=null;hereMsg='';dataMsg='';
+  if(pendingShare&&pendingShare.c===id){applyShare(pendingShare);pendingShare=null;}
+  save();
   try{history.replaceState(null,'','#'+id);}catch(e){}
+  const db=$('#demo-bar');if(db)db.hidden=!DEMO;
   renderCityChrome();renderSetup();run();
   startEats(id);
 }
