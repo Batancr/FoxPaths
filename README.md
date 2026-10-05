@@ -45,6 +45,9 @@ Newmarket and Waterloo, Ontario.
 
 The site lives in [`docs/`](docs/) and is served by GitHub Pages.
 
+New here, or a new chat picking up the work? Read [`PROCESS.md`](PROCESS.md) first: how FoxPaths was built, how
+changes are made and shipped, the decisions behind it and what's still open.
+
 ## Cities
 
 Each city has its own tab on the site, with its own places and saved settings. A city's data loads only when you open
