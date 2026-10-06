@@ -105,6 +105,9 @@ slow:
 - A limit on changing buses.
 - Per-trip settings ("Getting here" rows between stops: walk only, one route only, one or two buses) and a single
   set leave time with optional leeway, so a trip can be pinned to the way the person already knows they want to go.
+- From the person's own testing: usual time per saved place, always showing a closest plan instead of "no plan",
+  ▶ Now on saved days, a Free day tab with suggested times, city-first name search with pasted coordinates as a
+  fallback (a local restaurant, Chowk, didn't show up), and a blue dot plus live trip mode.
 - Named and typed saved places, saved days, recent places, "use my location", a date picker with Ontario holidays,
   calendar export, copy as text, share links, backup and restore, and an example mode.
 
@@ -165,7 +168,9 @@ Notes on this routine:
 
 ## Open items
 
-- **Untested on the live site:** address search (Photon), restaurant loading (Overpass), "use my location" and
+- **Untested on the live site:** the live trip and blue dot on a real phone outdoors, and Photon's `bbox` search
+  (only tested against simulated answers).
+- **Also untested on the live site:** address search (Photon), restaurant loading (Overpass), "use my location" and
   calendar files on an iPhone. All were tested only with simulated answers. If Photon or Overpass block requests
   from GitHub Pages, the fallback is to build those lists into the data files at build time.
 - **Schedule expiry:** YRT's file runs to Oct 31, 2026 and GRT's bus file to Dec 20, 2026. Refresh steps are in the

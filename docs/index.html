@@ -254,6 +254,25 @@ details.more[open]>summary h2::after{content:" −"}
 .notice{border-radius:var(--r);padding:14px 16px;background:var(--danger-soft);color:var(--ink);display:grid;gap:6px}
 .notice strong{color:var(--danger)}
 .notice ul{margin:0;padding-left:18px}
+.notice.bend{background:var(--signal-soft)}
+.notice.bend strong{color:var(--signal)}
+.notice details summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--surface-2);border-radius:999px}
+.modes button{border:0;background:transparent;padding:9px 10px;border-radius:999px;font-weight:700;cursor:pointer;color:var(--ink)}
+.modes button[aria-pressed="true"]{background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.free-item .act-head{justify-content:space-between}
+.icon-row{display:flex;gap:6px}
+.chip.go-chip{border-color:var(--accent);color:var(--accent);font-weight:700}
+.daychip{display:inline-flex;gap:2px}
+.tl>li.now{background:var(--accent-soft);border-radius:8px;box-shadow:0 0 0 2px var(--accent)}
+.livebar{position:sticky;top:8px;z-index:4;display:grid;gap:4px;margin:0 0 10px;padding:10px 12px;border-radius:8px;background:var(--ink);color:var(--bg);font-size:14px}
+.livebar .warn{color:var(--signal-soft);font-weight:700}
+.livebar .warn::before{content:"⚠ "}
+@media (max-width:899px){.livebar{top:58px}}
+.m-me{fill:#1A73E8;stroke:#fff;stroke-width:2.5}
+.m-me-acc{fill:#1A73E8;fill-opacity:.15;stroke:#1A73E8;stroke-opacity:.4}
+@media (prefers-reduced-motion: no-preference){.m-me{animation:mepulse 2s ease-in-out infinite}}
+@keyframes mepulse{50%{stroke-width:5}}
 .foot{margin-top:28px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);max-width:75ch}
 .foot p{margin:0 0 6px}
 .foot a{color:var(--accent)}
@@ -322,7 +341,8 @@ function setCustomPlaces(c){
     const o=c[k],p=list.find(b=>b.id===k);
     if(o&&p)Object.assign(p,toXY(o.lon,o.lat),{sub:o.label,q:o.label,custom:true});
   }
-  (c.saved||[]).forEach(s=>list.push({id:s.id,n:s.n,sub:s.sub,cat:'saved',stype:s.type||'other',from:s.from,q:s.q,custom:true,...toXY(s.lon,s.lat)}));
+  (c.saved||[]).forEach(s=>list.push({id:s.id,n:s.n,sub:s.sub,cat:'saved',stype:s.type||'other',from:s.from,q:s.q,custom:true,
+    ...(s.stay&&s.stay.min>0?{stayMin:s.stay.min,stayMax:s.stay.max??null}:{}),...toXY(s.lon,s.lat)}));
   if(c.here)list.push({id:'here',n:'Your location',sub:'Where you were when you tapped "Use my location"',cat:'here',
     q:`${c.here.lat.toFixed(6)},${c.here.lon.toFixed(6)}`,aliases:['here','my location','current location','where i am'],custom:true,...toXY(c.here.lon,c.here.lat)});
   const extra=EXTRA[BUNDLE.id]||[];
@@ -530,6 +550,9 @@ function makeRouter(o){
 const CAP=150000;
 function permutations(a){if(a.length<=1)return [a.slice()];const out=[];a.forEach((x,i)=>{permutations([...a.slice(0,i),...a.slice(i+1)]).forEach(p=>out.push([x,...p]));});return out;}
 
+// a stop set to "usual time" uses each place's own usual time when it has one (saved places)
+const actMin=(a,p)=>a.usual&&p&&p.stayMin!=null?p.stayMin:a.min;
+const actMax=(a,p)=>a.usual&&p&&p.stayMin!=null?p.stayMax:a.max;
 function searchDays(inp,R,endFrom,endTo){
   const acts=inp.acts,n=acts.length;
   const START=placeById[inp.start.place],END=placeById[inp.end.place];
@@ -553,7 +576,7 @@ function searchDays(inp,R,endFrom,endTo){
     const legAt=k=>k<n?acts[order[k]].leg:inp.end.leg;
     for(let k=0;k<=n;k++){let m=Infinity;for(const a of fromC(k))for(const b of toC(k))m=Math.min(m,R.minTravel(a,b,legAt(k)));minLeg.push(m);}
     const tail=new Array(n+1).fill(0);
-    for(let k=n-1;k>=0;k--)tail[k]=acts[order[k]].min+minLeg[k+1]+tail[k+1];
+    for(let k=n-1;k>=0;k--)tail[k]=Math.min(...cand[order[k]].map(p=>actMin(acts[order[k]],p)))+minLeg[k+1]+tail[k+1];
     if(minLeg.some(m=>m===Infinity))continue;
     const stack=[];
     const leaf=()=>{
@@ -563,7 +586,7 @@ function searchDays(inp,R,endFrom,endTo){
       for(let j=0;j<n;j++){
         const act=acts[order[j]],a=legs[j].op.arr,s=legs[j].s,lv=legs[j+1].op.leave;
         wait+=s-a;const d=lv-s;durs[act.id]=d;
-        if(act.max!=null&&d>act.max)spare+=d-act.max;
+        const mx=actMax(act,legs[j].to);if(mx!=null&&d>mx)spare+=d-mx;
       }
       leaves.push({legs,order:order.slice(),durs,wait,walk,transfers,spare,start:legs[0].op.leave,end:legs[n].op.arr});
     };
@@ -574,7 +597,7 @@ function searchDays(inp,R,endFrom,endTo){
         for(const op of opts){
           if(k===n){if(op.arr>=endFrom&&op.arr<=endTo){stack[k]={op,to};leaf();if(leaves.length>=CAP){truncated=true;return;}}continue;}
           const act=acts[order[k]];
-          const s=Math.max(op.arr,act.after??-1),r=s+act.min,lt=act.by??Infinity;
+          const s=Math.max(op.arr,act.after??-1),r=s+actMin(act,to),lt=act.by??Infinity;
           if(r>lt)continue;
           if(r+minLeg[k+1]+tail[k+1]>endTo)continue;
           stack[k]={op,to,s};dfs(k+1,to,r,lt);
@@ -663,6 +686,31 @@ function solve(inp){
   }else if(!far.length){
     reasons.push(`No bus trips link these places at those times.${BUNDLE.exact?'':` Only Routes ${ROUTES.map(r=>r.id).join(', ')} have timetables so far.`} Try a longer max walk, or check the time limits on each stop.`);
   }
+  return closestPlan(inp,reasons);
+}
+// Nothing fits every setting: bend them one at a time, keeping each bend, until a day works. Then show the
+// fastest of those days and say exactly which settings it bends, so there's always something to go on.
+function closestPlan(inp,reasons){
+  const legSet=[...inp.acts.map(a=>a.leg),inp.end.leg].some(L=>L&&(L.walk||L.route||L.K));
+  const steps=[
+    [inp.maxRides||legSet,c=>({...c,maxRides:0,acts:c.acts.map(a=>({...a,leg:{}})),end:{...c.end,leg:{}}}),'Ignores your limits on changing buses and on how to make each trip'],
+    [inp.end.from>0||inp.end.to<1440+180,c=>({...c,end:{...c.end,from:0,to:1440+240}}),''],
+    [inp.acts.some(a=>a.after!=null||a.by!=null),c=>({...c,acts:c.acts.map(a=>({...a,after:null,by:null}))}),'Ignores the time limits on your stops'],
+    [inp.start.to<1380,c=>({...c,start:{...c.start,to:Math.max(c.start.to,1380)}}),''],
+    [inp.maxWalk<20,c=>({...c,maxWalk:20}),'Walks up to 20 min to a bus stop'],
+    [true,c=>({...c,maxWalk:Math.max(c.maxWalk,30),walkDirect:600}),'Walks the whole way where no bus works'],
+  ];
+  let cur={...inp,goal:'early'};const bends=[];
+  for(const [need,apply,say] of steps){
+    if(!need)continue;
+    cur=apply(cur);if(say)bends.push(say);
+    const res=searchDays(cur,makeRouter(cur),cur.end.from,cur.end.to);
+    if(!res.leaves.length)continue;
+    const picks=pickOptions(res.leaves,cur),p=picks[0].p;
+    if(p.end<inp.end.from||p.end>inp.end.to)bends.push(`Gets you to ${placeById[inp.end.place].n} at ${fmt(p.end)}, ${p.end>inp.end.to?'after':'before'} your ${fmt(p.end>inp.end.to?inp.end.to:inp.end.from)} limit`);
+    if(p.start>inp.start.to)bends.push(`Leaves at ${fmt(p.start)}, later than your ${fmt(inp.start.to)} limit`);
+    return {ok:true,closest:true,bends,reasons,picks,count:res.leaves.length,truncated:res.truncated,inp:cur};
+  }
   return {ok:false,reasons};
 }
 
@@ -709,7 +757,7 @@ const dayOf=s=>s.date?dayInfo(s.date).day:s.day;
 function cityDefaults(B){
   const d=B.defaults;
   return {start:{place:'home',from:'10:00',to:'11:00'},end:{place:'home',from:'18:00',to:'19:00'},
-    acts:structuredClone(d.acts),day:DAY_TODAY,reorder:false,maxWalk:d.maxWalk||10,buffer:2,walkDirect:12,
+    acts:structuredClone(d.acts),day:DAY_TODAY,mode:'plan',free:{start:'home',at:'10:00',places:[],end:'home',by:''},reorder:false,maxWalk:d.maxWalk||10,buffer:2,walkDirect:12,
     goal:'max:'+(d.acts.find(x=>x.max==='')||d.acts[0]).id,addr:{...d.addr}};
 }
 let store=null;
@@ -786,15 +834,21 @@ function saveForm(){
     <span class="hint">${esc(ps.sub||'')}</span>
     <div class="row2">
       <label class="field"><span>Name</span><input type="text" id="ps-name" value="${esc(ps.n)}" maxlength="40" placeholder="e.g. Mom's, Gym, Favourite pho"></label>
+      <label class="field"><span>Usual time here</span><input type="text" id="ps-stay" value="${esc(ps.stay||'')}" placeholder="e.g. 20m or 20-30m" autocomplete="off" spellcheck="false"></label>
       <label class="field"><span>Type</span><select id="ps-type">${PLACE_TYPES.map(([t,l])=>`<option value="${t}"${ps.type===t?' selected':''}>${l}</option>`).join('')}</select></label>
     </div>
+    <span class="hint">Usual time is optional: how long you normally spend here, like 20 minutes to order and eat at KFC. Stops at this place use it automatically.</span>
     <div class="chips"><button type="button" class="chip on" data-action="saveplace">Save place</button><button type="button" class="chip" data-action="cancelsave">Cancel</button></div>
   </div>`;
 }
 function durNote(a){
   const mn=+a.min||0,mx=a.max===''||a.max==null?null:+a.max;
   if(!mn&&mx==null)return 'How long you need here';
-  return mx==null?`At least ${fmtDur(mn)}`:mn===mx?`About ${fmtDur(mn)}`:`${fmtDur(mn)} to ${fmtDur(mx)}`;
+  const t=mx==null?`At least ${fmtDur(mn)}`:mn===mx?`About ${fmtDur(mn)}`:`${fmtDur(mn)} to ${fmtDur(mx)}`;
+  const p=placeById[a.place];
+  if(a.usual&&p&&p.stayMin!=null)return t+`: your usual time at ${p.n}`;
+  if(a.usual&&a.place&&a.place.startsWith('any:')&&(state.custom.saved||[]).some(x=>x.stay&&x.stay.min))return t+'. Saved places with a usual time use their own';
+  return t;
 }
 // "Getting here": settings for the trip into a stop (or into the end). Stored on the destination, so they
 // stay with it when stops are reordered. how: any | walk | r:<route>; rides: '' (same as overall) | '1' | '2'
@@ -863,6 +917,81 @@ function quickExample(){
   const B=BUNDLE.defaults,a=B.acts.map(x=>`${x.label.toLowerCase()} at ${placeName(x.place).split(',')[0]} ${DayParse.fmtRange(x.min,x.max)}`);
   return `leave home 10-11am, ${a.join(', ')}, home by 7pm`;
 }
+/* ---------- free day: list places, FoxPaths suggests the order and the times ---------- */
+function modesHTML(s){
+  return `<div class="modes" role="group" aria-label="Kind of plan">${[['plan','Planner'],['free','Free day']].map(([v,l])=>`<button type="button" data-action="mode" data-v="${v}" aria-pressed="${(s.mode||'plan')===v}">${l}</button>`).join('')}</div>`;
+}
+// a starting guess at how long people stay at a kind of place; the person adjusts from there
+const STAY_GUESS=[[/\bzoo\b/,150],[/cinema|theatre|theater|movie|imax|bowling/,150],[/aquarium|museum|gallery|art cent|science cent|canoe museum/,90],
+  [/library|campus|universit|college|school|study/,120],[/\bgym\b|fitness|ymca|arena|pool|sports|climbing/,75],
+  [/park|trail|beach|garden|conservation|lookout|waterfront|\block\b|lift lock/,60],[/grocer|no frills|food basics|metro\b|sobeys|freshco|superstore|zehrs|walmart/,30],
+  [/mall|shop|store|market|plaza|centre/,60],[/caf[eé]|coffee|tim hortons|starbucks|bakery|bubble tea|ice cream/,30],
+  [/fast food|kfc|mcdonald|burger|subway|pizza|wendy|a&w|taco|shawarma/,25],[/restaurant|food|eat|grill|kitchen|bistro|\bbar\b|pub|sushi|pho|thai|indian/,50],
+  [/friend|family|visit|church/,90]];
+const CAT_GUESS={food:45,study:120,school:180,shop:60,groceries:30,work:240,health:45,park:60,gym:75,friend:90};
+function freeSuggest(q){
+  const v=q.place,mult={less:0.6,normal:1,more:1.6}[q.len||'normal'];
+  if(!v)return {min:60,max:90,text:''};
+  let base=60,why='';
+  if(v.startsWith('any:'))base=CAT_GUESS[v.slice(4).replace(/^my-/,'')]||60;
+  else{
+    const p=placeById[v];
+    if(p&&p.stayMin!=null){base=p.stayMin;why='your usual time';}
+    else if(p){const t=[p.n,p.sub,p.cat,p.stype].join(' ').toLowerCase();const hit=STAY_GUESS.find(([re])=>re.test(t));base=hit?hit[1]:(CAT_GUESS[p.stype]||CAT_GUESS[p.cat]||60);}
+  }
+  const min=Math.max(10,Math.round(base*mult/5)*5),max=q.len==='more'?null:Math.round(min*1.5/5)*5;
+  return {min,max,text:`${max==null?'At least '+fmtDur(min):fmtDur(min)+' to '+fmtDur(max)}${why?' · '+why:''}`};
+}
+function freeHTML(s){
+  const f=s.free;
+  const items=f.places.map((q,i)=>{const g=freeSuggest(q);return `
+    <li class="act free-item" data-fid="${q.id}">
+      <div class="act-head"><span class="act-num">${i+1}</span>
+        <span class="icon-row"><button class="icon-btn" data-action="fup" data-fid="${q.id}" aria-label="Move up" ${i===0?'disabled':''}>↑</button><button class="icon-btn" data-action="fremove" data-fid="${q.id}" aria-label="Remove place">✕</button></span></div>
+      ${pickField('free-'+q.id,q.place,'Where',true)}
+      <div class="chips" role="group" aria-label="How long">${[['less','Shorter'],['normal','Normal'],['more','Longer']].map(([v,l])=>`<button type="button" class="chip" data-action="flen" data-fid="${q.id}" data-v="${v}" aria-pressed="${(q.len||'normal')===v}">${l}</button>`).join('')}</div>
+      <span class="dur-note">${esc(g.text)}</span>
+    </li>`;}).join('');
+  return `
+    <div class="block">
+      <h2>Free day</h2>
+      <p class="hint">List the places you want to go, without any times. FoxPaths picks the order and a sensible time at each, then you adjust: make a stay shorter or longer, or move the day into the planner to fine-tune everything.</p>
+      <div class="row2">
+        <label class="field"><span>Date</span><input type="date" id="date" value="${esc(s.date||'')}"></label>
+        <label class="field"><span>Schedule</span><select id="day"${s.date?' disabled':''}>${[['weekday','Weekday'],['saturday','Saturday'],['sunday','Sunday/holiday']].map(([v,l])=>`<option value="${v}"${dayOf(s)===v?' selected':''}>${l}</option>`).join('')}</select></label>
+      </div>
+      <p class="hint" id="date-note">${esc(dateNote(s))}</p>
+      ${pickField('fstart',f.start,'From',false)}
+      <div class="row-at">
+        <label class="field"><span>Leave at</span><input type="time" step="300" id="free-at" value="${esc(f.at)}"></label>
+        <div class="chips"><button type="button" class="chip now" data-action="freenow">Leave now</button></div>
+      </div>
+      <ol class="acts">${items}</ol>
+      <button class="add-btn" data-action="fadd">+ Add a place</button>
+      ${f.places.length>5?'<p class="hint">With more than 5 places, FoxPaths keeps the order you listed. Use ↑ to change it.</p>':''}
+      ${pickField('fend',f.end,'Finish at',false)}
+      <label class="field"><span>Be back by (optional)</span><input type="time" step="300" id="free-by" value="${esc(f.by||'')}"></label>
+      <div class="chips"><button type="button" class="chip go-chip" data-action="free2plan">Fine-tune in the planner</button></div>
+      <span class="hint">Copies the plan you're looking at, with its order and times, into the planner, where you can set exact times and buses.</span>
+    </div>`;
+}
+function freeInput(){
+  const f=state.free,at=parseT(f.at)??600,by=parseT(f.by);
+  const acts=f.places.filter(q=>q.place).map((q,i)=>{const g=freeSuggest(q),p=placeById[q.place];
+    return {id:q.id,label:q.place.startsWith('any:')?(CATS[q.place.slice(4)]||'Stop'):(p?p.n.split(',')[0]:'Stop '+(i+1)),place:q.place,min:g.min,max:g.max,after:null,by:null,leg:{},usual:false};});
+  return {start:{place:f.start,from:at,to:at+30},end:{place:f.end,from:0,to:by??1440+180,leg:{}},acts,
+    maxRides:0,day:dayOf(state),reorder:acts.length>1&&acts.length<=5,maxWalk:Math.max(1,state.maxWalk),buffer:Math.max(0,state.buffer),walkDirect:Math.max(0,state.walkDirect),goal:'smooth',free:true};
+}
+function freeToPlanner(){
+  const f=state.free,inp=freeInput(),pick=result&&result.ok&&result.inp&&result.inp.free?result.picks[selected].p:null;
+  const order=pick?pick.order:inp.acts.map((_,i)=>i);
+  state.acts=order.map(i=>{const a=inp.acts[i],d=pick?pick.durs[a.id]:null;
+    return {id:'a'+(++nextId),label:a.label,place:a.place,min:a.min,max:a.max==null?(d&&d>a.min?Math.round(d/5)*5:''):Math.max(a.max,d||0),after:'',by:'',auto:true,leg:null,usual:false};});
+  state.start={...state.start,place:f.start,mode:'at',at:pick?`${pad2(Math.floor(pick.start/60))}:${pad2(Math.round(pick.start%60))}`:f.at,leeway:10};
+  const by=parseT(f.by);
+  state.end={...state.end,place:f.end,leg:null,flex:by==null,...(by!=null?{from:`${pad2(Math.floor(Math.max(0,by-60)/60))}:${pad2(Math.max(0,by-60)%60)}`,to:f.by}:{})};
+  state.reorder=false;state.goal='smooth';state.mode='plan';quickInfo={notes:['Moved your free day into the planner. Set exact times, buses or time limits on any stop.']};
+}
 function renderSetup(){
   const s=state;
   const acts=s.acts.map((a,i)=>{
@@ -892,7 +1021,7 @@ function renderSetup(){
         </div>
       </details>
     </li>`;}).join('');
-  $('#setup').innerHTML=`
+  $('#setup').innerHTML=modesHTML(s)+(s.mode==='free'?freeHTML(s):`
     <div class="block quick">
       <h2>Type your day</h2>
       <textarea id="quick" rows="3" placeholder="e.g. ${esc(quickExample())}" spellcheck="false">${esc(s.quick||'')}</textarea>
@@ -901,11 +1030,11 @@ function renderSetup(){
       <div class="days">
         <span class="eyebrow">Saved days</span>
         <div class="chips">
-          ${s.days.map((d,i)=>`<span class="daychip"><button type="button" class="chip" data-action="loadday" data-i="${i}" title="Load this day">${esc(d.name)}</button><button type="button" class="chip x" data-action="delday" data-i="${i}" aria-label="Delete ${esc(d.name)}">×</button></span>`).join('')}
+          ${s.days.map((d,i)=>`<span class="daychip"><button type="button" class="chip go-chip" data-action="goday" data-i="${i}" title="Plan ${esc(d.name)} fresh, leaving now" aria-label="Plan ${esc(d.name)} leaving now">▶ Now</button><button type="button" class="chip" data-action="loadday" data-i="${i}" title="Load this day">${esc(d.name)}</button><button type="button" class="chip x" data-action="delday" data-i="${i}" aria-label="Delete ${esc(d.name)}">×</button></span>`).join('')}
           ${savingDay?`<span class="dayname"><input type="text" id="dayname" placeholder="Name this day" value="${esc(savingDay.name||'')}" maxlength="40"><button type="button" class="chip on" data-action="savedayok">Save</button><button type="button" class="chip" data-action="savedaycancel">Cancel</button></span>`
             :`<button type="button" class="chip add" data-action="saveday">+ Save this day</button>`}
         </div>
-        ${s.days.length?'':'<span class="hint">Save a day you plan often, like a study day, and load it in one tap.</span>'}
+        <span class="hint">${s.days.length?'Tap a name to load it, or ▶ Now to plan it fresh from right now with today\'s buses.':'Save a day you plan often, like a study day, and load it in one tap. ▶ Now plans it fresh from right now.'}</span>
       </div>
     </div>
     <div class="block">
@@ -935,12 +1064,12 @@ function renderSetup(){
         <span class="to">and</span>
         <label class="field"><span>&nbsp;</span><input type="time" step="300" id="end-to" value="${esc(s.end.to)}" aria-label="Arrive by"></label>
       </div>
-    </div>
+    </div>`)+`
     <details class="block more"${s.moreOpen?' open':''}>
       <summary><h2>More options</h2></summary>
-      <label class="field"><span>Optimize for</span><select id="goal">${goalOptions()}</select></label>
+      ${s.mode==='free'?'':`<label class="field"><span>Optimize for</span><select id="goal">${goalOptions()}</select></label>
       <label class="field"><span>Changing buses between two places</span><select id="rides">${[['any','Allow changing buses'],['2','At most one change'],['1','No changes: one bus per trip']].map(([v,l])=>`<option value="${v}"${(s.rides||'any')===v?' selected':''}>${l}</option>`).join('')}</select></label>
-      <p class="hint" id="rides-hint"${(s.rides||'any')==='any'?' hidden':''}>FoxPaths will walk you further to a single bus instead, up to your max walk to a stop. Raise that if no plan fits.</p>
+      <p class="hint" id="rides-hint"${(s.rides||'any')==='any'?' hidden':''}>FoxPaths will walk you further to a single bus instead, up to your max walk to a stop. Raise that if no plan fits.</p>`}
       <div class="row2">
         <label class="field"><span>Max walk to a stop (min)</span><input type="number" min="1" max="30" id="maxWalk" value="${esc(s.maxWalk)}"></label>
         <label class="field"><span>Be at the stop early (min)</span><input type="number" min="0" max="15" id="buffer" value="${esc(s.buffer)}"></label>
@@ -954,7 +1083,7 @@ function renderSetup(){
       ${pendingSave&&!pendingSave.editId?'':acField('new','Save another place','',null)}
       ${pendingSave&&!pendingSave.editId?saveForm():''}
       ${(s.custom.saved||[]).length?`<ul class="saved">${s.custom.saved.map(p=>pendingSave&&pendingSave.editId===p.id?`<li class="editing">${saveForm()}</li>`
-        :`<li><div><strong>${esc(p.n)}</strong><span>${esc(typeName(p.type))} · ${esc(p.sub)}</span></div><span class="saved-btns"><button class="icon-btn" data-action="editplace" data-pid="${p.id}" aria-label="Rename ${esc(p.n)}" title="Rename or change type">✎</button><button class="icon-btn" data-action="unsave" data-pid="${p.id}" aria-label="Remove ${esc(p.n)}">✕</button></span></li>`).join('')}</ul>`:''}
+        :`<li><div><strong>${esc(p.n)}</strong><span>${esc(typeName(p.type))}${p.stay&&p.stay.min?' · usually '+esc(DayParse.fmtRange(p.stay.min,p.stay.max??'')):''} · ${esc(p.sub)}</span></div><span class="saved-btns"><button class="icon-btn" data-action="editplace" data-pid="${p.id}" aria-label="Rename ${esc(p.n)}" title="Rename or change type">✎</button><button class="icon-btn" data-action="unsave" data-pid="${p.id}" aria-label="Remove ${esc(p.n)}">✕</button></span></li>`).join('')}</ul>`:''}
       <p class="hint">Type part of an address or a business name, like "561" or "KFC", and pick a suggestion; the closest come first. Suggestions come from <a href="https://photon.komoot.io" target="_blank" rel="noopener">Photon</a> using <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> data, so what you type is sent to that service. Your places are saved only in this browser.</p>
     </div>
     <div class="block">
@@ -969,13 +1098,21 @@ function readSetup(){
   const v=id=>document.getElementById(id)?.value??'';
   const num=(id,d)=>{const x=parseFloat(v(id));return Number.isFinite(x)?x:d;};
   const el=id=>document.getElementById(id);
+  if(state.mode==='free'){
+    const f=state.free;if(el('free-at'))f.at=v('free-at');if(el('free-by'))f.by=v('free-by');
+    state.date=v('date');state.day=state.date?dayInfo(state.date).day:(v('day')||state.day);
+    state.moreOpen=!!document.querySelector('details.more')?.open;
+    state.maxWalk=num('maxWalk',8);state.buffer=num('buffer',2);state.walkDirect=num('walkDirect',12);
+    save();return;
+  }
   const legIn=(key,old)=>el(`leg-${key}-how`)?{how:v(`leg-${key}-how`)||'any',rides:v(`leg-${key}-how`)==='any'?v(`leg-${key}-rides`):''}:old;
   state.start={...state.start,...(el('start-from')?{from:v('start-from'),to:v('start-to')}:{}),...(el('start-at')?{at:v('start-at')}:{})};
   state.end={...state.end,from:v('end-from'),to:v('end-to'),flex:!!el('endflex')?.checked,leg:legIn('end',state.end.leg)};
   state.acts=state.acts.map(a=>{
     const d=DayParse.parseDur(v(`act-${a.id}-dur`));
     const label=v(`act-${a.id}-label`);
-    return {...a,label,auto:a.auto&&label===a.label,min:d?d.min:a.min,max:d?(d.max==null?'':d.max):a.max,after:v(`act-${a.id}-after`),by:v(`act-${a.id}-by`),leg:legIn(a.id,a.leg)};
+    const durEl=el(`act-${a.id}-dur`),typed=durEl?durEl.value.trim()!==durText(a):false;
+    return {...a,label,auto:a.auto&&label===a.label,usual:a.usual&&!typed,min:d?d.min:a.min,max:d?(d.max==null?'':d.max):a.max,after:v(`act-${a.id}-after`),by:v(`act-${a.id}-by`),leg:legIn(a.id,a.leg)};
   });
   state.reorder=document.getElementById('reorder')?.checked||false;
   state.date=v('date');
@@ -989,6 +1126,7 @@ function readSetup(){
   save();
 }
 function toInput(){
+  if(state.mode==='free')return freeInput();
   const T=s=>parseT(s);
   const st=state.start,at=st.mode==='at'?(T(st.at)??T(st.from)??600):null,lw=Math.max(0,+st.leeway||0);
   const endLeg=normLeg(state.end.leg);
@@ -996,7 +1134,7 @@ function toInput(){
     start:at!=null?{place:st.place,from:Math.max(0,at-lw),to:at+lw,at}:{place:st.place,from:T(st.from)??600,to:T(st.to)??(T(st.from)??600)},
     end:state.end.flex?{place:state.end.place,from:0,to:1440+180,leg:endLeg}:{place:state.end.place,from:T(state.end.from)??0,to:T(state.end.to)??1439,leg:endLeg},
     acts:state.acts.map((a,i)=>{const mn=Math.max(0,parseFloat(a.min)||0);let mx=parseFloat(a.max);mx=Number.isFinite(mx)&&mx>=mn?mx:null;
-      return {id:a.id,label:a.label||'Stop '+(i+1),place:a.place,min:mn,max:mx,after:T(a.after),by:T(a.by),leg:normLeg(a.leg)};}),
+      return {id:a.id,label:a.label||'Stop '+(i+1),place:a.place,min:mn,max:mx,after:T(a.after),by:T(a.by),leg:normLeg(a.leg),usual:!!a.usual};}),
     maxRides:state.rides==='1'?1:state.rides==='2'?2:0,day:dayOf(state),reorder:state.reorder,maxWalk:Math.max(1,state.maxWalk),buffer:Math.max(0,state.buffer),walkDirect:Math.max(0,state.walkDirect),goal:state.goal
   };
 }
@@ -1012,11 +1150,12 @@ function run(){
   const inp=toInput();
   const t0=performance.now();
   const missing=inp.acts.findIndex(a=>!a.place);
+  if(inp.free&&!inp.acts.length){result={ok:false,reasons:['Add the places you want to go: tap "+ Add a place".'],inp};renderMain();return;}
   if(missing>=0||!inp.start.place||!inp.end.place)result={ok:false,reasons:[missing>=0?`Pick a place for stop ${missing+1}${inp.acts[missing].label?` (${inp.acts[missing].label})`:''}: type in its "Where" box and choose a suggestion.`:'Pick where your day starts and ends.']};
   else if(inp.start.to<inp.start.from)result={ok:false,reasons:['The latest leave time is before the earliest one.']};
   else if(inp.end.to<inp.end.from)result={ok:false,reasons:['The latest arrival time is before the earliest one.']};
   else result=solve(inp);
-  result.ms=Math.round(performance.now()-t0);result.inp=inp;selected=0;
+  result.ms=Math.round(performance.now()-t0);result.inp=result.inp||inp;selected=0;
   renderMain();
 }
 
@@ -1063,7 +1202,7 @@ function planRows(plan,inp){
   const ref=inp.start.at??inp.start.from,extra=plan.start-ref;
   rows.push({k:'start',t:plan.start,main:`Leave ${esc(startP.n)}`,link:legLink(0),
     sub:inp.start.at!=null?(extra?`${fmtDur(Math.abs(extra))} ${extra>0?'after':'before'} your set time of ${fmt(ref)}, within the leeway you allowed.`:'')
-      :extra>=3?`You have ${fmtDur(extra)} more at ${esc(startP.n)}: leaving at ${fmt(plan.start)} instead of ${fmt(ref)} avoids waiting later on.`:''});
+      :extra>=3&&!inp.free?`You have ${fmtDur(extra)} more at ${esc(startP.n)}: leaving at ${fmt(plan.start)} instead of ${fmt(ref)} avoids waiting later on.`:''});
   plan.legs.forEach((leg,k)=>{
     for(const st of leg.op.steps){
       if(st.k==='walk'&&st.w>0)rows.push({k:'walk',t:st.t0,main:`Walk ${st.w} min to ${esc(nm(st.to))}`});
@@ -1077,10 +1216,11 @@ function planRows(plan,inp){
       const notes=[];
       if(act.place.startsWith('any:'))notes.push('App picked this place');
       if(early>0)notes.push(`You arrive ${fmtDur(early)} before it starts`);
-      if(act.max!=null&&d>act.max)notes.push(`includes ${fmtDur(d-act.max)} spare beyond your ${fmtDur(act.max)} max`);
-      else notes.push(`your range: ${fmtDur(act.min)}${act.max!=null?' to '+fmtDur(act.max):' or more'}`);
+      const mn=actMin(act,leg.to),mx=actMax(act,leg.to),usual=act.usual&&leg.to.stayMin!=null;
+      if(mx!=null&&d>mx)notes.push(`includes ${fmtDur(d-mx)} spare beyond your ${usual?'usual ':''}${fmtDur(mx)}${usual?'':' max'}`);
+      else notes.push(`${usual?'your usual time here':'your range'}: ${fmtDur(mn)}${mx!=null?(mx!==mn?' to '+fmtDur(mx):''):' or more'}`);
       const canSave=leg.to.osm&&!savedFrom(leg.to);
-      rows.push({k:'act',t:s,main:`${esc(act.label)} at ${esc(leg.to.n)}`,dur:d,until:plan.legs[k+1].op.leave,sub:notes.join(' · '),link:legLink(k+1)+(canSave?`<button type="button" class="gm gm-save" data-saveplace="${leg.to.id}">Save ${esc(leg.to.n)} to your places</button>`:'')});
+      rows.push({k:'act',t:s,main:act.label===leg.to.n.split(',')[0]?esc(leg.to.n):`${esc(act.label)} at ${esc(leg.to.n)}`,dur:d,until:plan.legs[k+1].op.leave,sub:notes.join(' · '),link:legLink(k+1)+(canSave?`<button type="button" class="gm gm-save" data-saveplace="${leg.to.id}">Save ${esc(leg.to.n)} to your places</button>`:'')});
     }
   });
   rows.push({k:'end',t:plan.end,main:`Arrive at ${esc(endP.n)}`});
@@ -1091,7 +1231,7 @@ function rowHTML(r){
   const body=r.k==='act'
     ?`<div class="actbox"><div class="main-line">${r.main}</div><div><span class="dur">${fmtDur(r.dur)}</span> · until ${fmt(r.until)}</div><div class="sub">${r.sub}</div>${r.link||''}</div>`
     :`<div class="main-line">${r.main}</div>${r.sub?`<div class="sub">${r.sub}</div>`:''}${r.help||''}${r.link||''}`;
-  return `<li class="k-${r.k}"${style}><time>${fmt(r.t)}</time><span class="dot" aria-hidden="true"></span><div class="body">${body}</div></li>`;
+  return `<li class="k-${r.k}" data-t="${r.t}"${style}><time>${fmt(r.t)}</time><span class="dot" aria-hidden="true"></span><div class="body">${body}</div></li>`;
 }
 function optionCard(pick,i,inp){
   const p=pick.p;
@@ -1101,7 +1241,7 @@ function optionCard(pick,i,inp){
   return `<button class="opt" data-opt="${i}" aria-pressed="${i===selected}">
     <span class="tag">${esc(pick.tag)}</span>
     <span class="span">${fmt(p.start)} → ${fmt(p.end)}</span>
-    ${inp.start.at==null&&p.start-inp.start.from>=10?`<span class="picked">Stay ${fmtDur(p.start-inp.start.from)} more before you leave</span>`:''}
+    ${inp.start.at==null&&!inp.free&&p.start-inp.start.from>=10?`<span class="picked">Stay ${fmtDur(p.start-inp.start.from)} more before you leave</span>`:''}
     <dl>${actRows}<dt>Waiting</dt><dd>${fmtDur(p.wait)}</dd><dt>Walking</dt><dd>${fmtDur(p.walk)}</dd><dt>Bus changes</dt><dd>${p.transfers}</dd></dl>
     ${order}${picked.length?`<div class="picked">App picked: ${picked.join(', ')}</div>`:''}
   </button>`;
@@ -1114,26 +1254,35 @@ function renderMain(){
     m.innerHTML=`<div class="status"><h2>No plan fits yet</h2></div>
       <div class="notice"><strong>Here's what's blocking it</strong><ul>${result.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul></div>
       <div class="panel">${mapHTML(null)}</div>`;
+    drawMe();updateLive();
     return;
   }
   const inp=result.inp,pick=result.picks[selected];
+  const bend=result.closest?`<div class="notice bend" role="status"><strong>Nothing fits all your settings, so here ${result.picks.length>1?'are the closest plans':'is the closest plan'}, fastest first.</strong>
+      <span>To make it work, ${result.picks.length>1?'these plans bend':'this plan bends'} some settings:</span>
+      <ul>${result.bends.map(b=>`<li>${esc(b)}</li>`).join('')}</ul>
+      ${result.reasons.length?`<details><summary>Why nothing fit</summary><ul>${result.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul></details>`:''}</div>`:'';
   m.innerHTML=`
-    <div class="status"><h2>${result.picks.length} plan${result.picks.length>1?'s':''} for your day</h2>
+    <div class="status"><h2>${result.closest?'Closest plan':`${result.picks.length} plan${result.picks.length>1?'s':''} for your day`}</h2>
       <p>Compared ${result.count.toLocaleString()} workable schedules${result.truncated?' (search capped)':''} in ${result.ms} ms</p></div>
+    ${bend}
     <div class="options">${result.picks.map((p,i)=>optionCard(p,i,inp)).join('')}</div>
     <div class="sharebar">
       <button type="button" class="chip" data-share="ics">Add to calendar</button>
       <button type="button" class="chip" data-share="text">Copy as text</button>
       <button type="button" class="chip" data-share="link">Copy share link</button>
+      ${inp.free?'':`<button type="button" class="chip" data-share="saveday">Save this day</button>`}
       <span class="hint" id="share-msg" role="status">${esc(shareMsg)}</span>
     </div>
     <div class="detail">
       <div class="panel">
-        <div class="panel-head"><span class="eyebrow">Step by step · ${esc(pick.tag)}</span></div>
+        <div class="panel-head"><span class="eyebrow">Step by step · ${esc(pick.tag)}</span><button type="button" class="chip" data-live aria-pressed="${live.on}">${live.on?'End trip':'▶ Start trip'}</button></div>
+        <div class="livebar" id="livebar" role="status" aria-live="polite" hidden></div>
         <ol class="tl">${planRows(pick.p,inp).map(rowHTML).join('')}</ol>
       </div>
       <div class="panel">${mapHTML(pick.p)}</div>
     </div>`;
+  drawMe();updateLive();
 }
 
 /* ---------- route map (real City of Peterborough route lines) ---------- */
@@ -1184,8 +1333,9 @@ function mapHTML(plan){
     g+=`<text class="m-label strong" x="${right?x+w/2+5:x-w/2-5}" y="${y+4}" text-anchor="${right?'start':'end'}">${esc(p.n)}</text>`;
   });
   const legend=ROUTES.map(r=>`<span><span class="route" style="--rc:${r.c}">${r.id}</span>${esc(r.name)}</span>`).join('')+(CITY_LINES.some(l=>!BUNDLE.routes[l.r])?`<span><span class="route route-other">·</span>Other routes, no timetable yet</span>`:'');
-  return `<div class="map-wrap"><div class="panel-head"><span class="eyebrow">${esc(BUNDLE.mapTitle||BUNDLE.name+' transit routes')}</span><span class="hint">${plan?'S start · numbers are your stops · E end · dotted lines are walks':esc(BUNDLE.mapNote||'Bus route lines')}</span></div>
-    <svg class="map-svg" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" role="img" aria-label="Map of ${esc(BUNDLE.name)} bus routes${plan?' with the selected plan highlighted':''}">${g}</svg>
+  return `<div class="map-wrap"><div class="panel-head"><span class="eyebrow">${esc(BUNDLE.mapTitle||BUNDLE.name+' transit routes')}</span><button type="button" class="chip" data-loc aria-pressed="${me.watch!=null}">${me.watch!=null?'Hide where I am':'◉ Where am I?'}</button><span class="hint">${plan?'S start · numbers are your stops · E end · dotted lines are walks':esc(BUNDLE.mapNote||'Bus route lines')}</span></div>
+    <svg class="map-svg" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" role="img" aria-label="Map of ${esc(BUNDLE.name)} bus routes${plan?' with the selected plan highlighted':''}">${g}<g id="me-dot"></g></svg>
+    <span class="hint" id="me-msg" role="status"></span>
     <div class="legend">${legend}</div></div>`;
 }
 
@@ -1207,10 +1357,23 @@ function setPlace(key,val){
     a.place=val;
     if(!a.label||a.auto){const p=placeById[val],c=val.startsWith('any:')?val.slice(4).replace(/^my-/,''):'';
       const lab=c?(CAT_LABEL[c]||TYPE_ACT[c]||''):p?(p.cat==='saved'?(TYPE_ACT[p.stype]||p.n):(CAT_LABEL[p.cat]||p.n.split(',')[0])):'';if(lab){a.label=lab;a.auto=true;}}
+    useUsual(a);
   }
+  else if(key==='fstart')state.free.start=val;
+  else if(key==='fend')state.free.end=val;
+  else if(key.startsWith('free-')){const q=state.free.places.find(x=>'free-'+x.id===key);if(q)q.place=val;}
 }
+// a stop at a saved place with a usual time takes that time; "one of my saved …" uses each place's own
+function useUsual(a){
+  const p=placeById[a.place];
+  if(a.place&&a.place.startsWith('any:'))a.usual=true;
+  else if(p&&p.stayMin!=null){a.min=p.stayMin;a.max=p.stayMax??'';a.usual=true;}
+  else a.usual=false;
+}
+function refreshUsual(){(state.acts||[]).forEach(a=>{if(a.usual)useUsual(a);});}
 $('#setup').addEventListener('input',e=>{
   if(e.target.id==='ps-name'){pendingSave.n=e.target.value;return;}
+  if(e.target.id==='ps-stay'){pendingSave.stay=e.target.value;return;}
   if(e.target.id==='dayname'){savingDay.name=e.target.value;return;}
   if(e.target.closest('.ac')||e.target.id==='quick'){if(e.target.id==='quick'){state.quick=e.target.value;save();}return;}
   readSetup();
@@ -1223,7 +1386,7 @@ $('#setup').addEventListener('input',e=>{
   schedulePlan();
 });
 $('#setup').addEventListener('change',e=>{
-  if(e.target.closest('.ac')||e.target.id==='quick'||e.target.id==='ps-name'||e.target.id==='ps-type'||e.target.id==='dayname')return;
+  if(e.target.closest('.ac')||e.target.id==='quick'||e.target.id==='ps-name'||e.target.id==='ps-type'||e.target.id==='ps-stay'||e.target.id==='dayname')return;
   if(e.target.id==='restore'){restoreBackup(e.target.files&&e.target.files[0]);return;}
   readSetup();
   if(e.target.id==='date'){save();renderSetup();}
@@ -1243,13 +1406,21 @@ $('#setup').addEventListener('click',e=>{
     case 'remove':state.acts.splice(i,1);break;
     case 'up':if(i>0)[state.acts[i-1],state.acts[i]]=[state.acts[i],state.acts[i-1]];break;
     case 'down':if(i<state.acts.length-1)[state.acts[i+1],state.acts[i]]=[state.acts[i],state.acts[i+1]];break;
-    case 'dur':{const d=DayParse.parseDur(b.dataset.v);if(d&&i>=0){state.acts[i].min=d.min;state.acts[i].max=d.max==null?'':d.max;}break;}
+    case 'dur':{const d=DayParse.parseDur(b.dataset.v);if(d&&i>=0){state.acts[i].min=d.min;state.acts[i].max=d.max==null?'':d.max;state.acts[i].usual=false;}break;}
     case 'parse':applyQuick();return;
     case 'now':leaveNow();state.goal='smooth';break;
     case 'startmode':
       if(b.dataset.v==='at'&&state.start.mode!=='at'){state.start.at=state.start.at||state.start.from;if(state.start.leeway==null)state.start.leeway=10;}
       state.start.mode=b.dataset.v;break;
     case 'leeway':state.start.leeway=+b.dataset.v;break;
+    case 'mode':state.mode=b.dataset.v==='free'?'free':'plan';if(state.mode==='free'&&!state.free.places.length)state.free.places.push({id:'f'+(++nextId),place:'',len:'normal'});break;
+    case 'fadd':state.free.places.push({id:'f'+(++nextId),place:'',len:'normal'});save();renderSetup();
+      setTimeout(()=>{const q=state.free.places[state.free.places.length-1];document.getElementById('addr-free-'+q.id)?.focus();},0);return;
+    case 'fremove':state.free.places=state.free.places.filter(q=>q.id!==b.dataset.fid);break;
+    case 'fup':{const k=state.free.places.findIndex(q=>q.id===b.dataset.fid);if(k>0)[state.free.places[k-1],state.free.places[k]]=[state.free.places[k],state.free.places[k-1]];break;}
+    case 'flen':{const q=state.free.places.find(x=>x.id===b.dataset.fid);if(q)q.len=b.dataset.v;break;}
+    case 'freenow':{const d=new Date(),m=Math.ceil((d.getHours()*60+d.getMinutes())/5)*5;state.free.at=`${pad2(Math.floor(m/60)%24)}:${pad2(m%60)}`;state.date=isoDate(d);break;}
+    case 'free2plan':freeToPlanner();window.scrollTo({top:0,behavior:'smooth'});break;
     case 'legreset':{const k=b.dataset.leg;if(k==='end')state.end.leg=null;else{const a=state.acts.find(x=>x.id===k);if(a)a.leg=null;}break;}
     case 'unsave':{const id=b.dataset.pid;state.custom.saved=state.custom.saved.filter(p=>p.id!==id);
       state.acts.forEach(a=>{if(a.place===id)a.place='';});['start','end'].forEach(k=>{if(state[k].place===id)state[k].place='home';});
@@ -1262,16 +1433,22 @@ $('#setup').addEventListener('click',e=>{
       const snap=daySnapshot();const k=state.days.findIndex(d=>d.name.toLowerCase()===name.toLowerCase());
       if(k>=0)state.days[k]={name,snap};else state.days.push({name,snap});
       savingDay=null;save();renderSetup();return;}
-    case 'loadday':{const d=state.days[+b.dataset.i];if(d){applySnapshot(d.snap);quickInfo=null;}break;}
+    case 'loadday':{const d=state.days[+b.dataset.i];if(d){applySnapshot(d.snap);quickInfo=null;state.mode='plan';}break;}
+    case 'goday':{const d=state.days[+b.dataset.i];if(!d)break;applySnapshot(d.snap);leaveNow();state.mode='plan';
+      quickInfo={notes:[`Planning "${d.name}" fresh, leaving now.`]};save();renderSetup();schedulePlan(30);
+      if(window.matchMedia('(max-width: 899px)').matches)setView('plans');return;}
     case 'delday':state.days.splice(+b.dataset.i,1);save();renderSetup();return;
     case 'here':useMyLocation();return;
-    case 'editplace':{const s=state.custom.saved.find(x=>x.id===b.dataset.pid);if(s)pendingSave={editId:s.id,n:s.n,type:s.type||'other',sub:s.sub};renderSetup();setTimeout(()=>$('#ps-name')?.focus(),0);return;}
+    case 'editplace':{const s=state.custom.saved.find(x=>x.id===b.dataset.pid);if(s)pendingSave={editId:s.id,n:s.n,type:s.type||'other',sub:s.sub,stay:s.stay&&s.stay.min?DayParse.fmtRange(s.stay.min,s.stay.max??''):''};renderSetup();setTimeout(()=>$('#ps-name')?.focus(),0);return;}
     case 'cancelsave':pendingSave=null;renderSetup();return;
     case 'saveplace':{
       const ps=pendingSave;if(!ps)return;
       const n=(($('#ps-name')?.value)||'').trim()||ps.n||'Saved place',type=$('#ps-type')?.value||'other';
-      if(ps.editId){const s=state.custom.saved.find(x=>x.id===ps.editId);if(s){s.n=n;s.type=type;}}
-      else savePlace(ps.it,n,type);
+      const sd=DayParse.parseDur($('#ps-stay')?.value||''),stay=sd&&sd.min>0?{min:sd.min,max:sd.max}:null;
+      if(ps.editId){const s=state.custom.saved.find(x=>x.id===ps.editId);if(s){s.n=n;s.type=type;s.stay=stay;}}
+      else savePlace(ps.it,n,type,stay);
+      // stops already at this place pick up the new usual time
+      setCustomPlaces(state.custom);refreshUsual();
       pendingSave=null;setCustomPlaces(state.custom);break;}
     case 'backup':downloadBackup();return;
   }
@@ -1299,17 +1476,19 @@ function quickOutHTML(){
 }
 async function photonFirst(q){
   const c=acCenter(),[clon,clat]=cityLonLat(c.x,c.y);
-  const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8&lang=en&lat=${clat.toFixed(5)}&lon=${clon.toFixed(5)}`);
-  if(!r.ok)throw new Error('HTTP '+r.status);
-  const js=await r.json();
-  const found=(js.features||[]).map(f=>{const [lon,lat]=f.geometry.coordinates;return {...acLabel(f.properties||{}),lon,lat,x:(lon-LON0)*KX,y:(lat-LAT0)*KY};})
-    .filter(f=>Math.hypot(f.x,f.y)<30).sort((a,b)=>Math.hypot(a.x-c.x,a.y-c.y)-Math.hypot(b.x-c.x,b.y-c.y));
+  // a restaurant FoxPaths already knows from OpenStreetMap wins, then the city-only search, then nearby-first
+  const ql=q.toLowerCase(),eat=PLACES.filter(p=>p.osm&&p.n.toLowerCase().includes(ql)).sort((a,b)=>Math.hypot(a.x-c.x,a.y-c.y)-Math.hypot(b.x-c.x,b.y-c.y))[0];
+  if(eat)return {title:eat.n,sub:eat.sub,q:eat.q,x:eat.x,y:eat.y,osm:true,from:eat.id};
+  let found=[];
+  try{found=await photon(q,`&bbox=${cityBBox()}`);}catch(e){}
+  if(!found.length)found=await photon(q,`&lat=${clat.toFixed(5)}&lon=${clon.toFixed(5)}`);
+  found=found.filter(f=>Math.hypot(f.x,f.y)<30).sort((a,b)=>Math.hypot(a.x-c.x,a.y-c.y)-Math.hypot(b.x-c.x,b.y-c.y));
   return found[0]||null;
 }
-function savePlace(it,name,type){
+function savePlace(it,name,type,stay){
   const id='u'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
   const [lon,lat]=it.lon!=null?[it.lon,it.lat]:cityLonLat(it.x,it.y);
-  state.custom.saved=[...(state.custom.saved||[]),{id,n:name||it.title,sub:it.sub||it.q,q:it.q,lon,lat,type:type||guessType(it),...(it.from?{from:it.from}:{})}];
+  state.custom.saved=[...(state.custom.saved||[]),{id,n:name||it.title,sub:it.sub||it.q,q:it.q,lon,lat,type:type||guessType(it),...(stay?{stay}:{}),...(it.from?{from:it.from}:{})}];
   setCustomPlaces(state.custom);return id;
 }
 function daySnapshot(){
@@ -1321,6 +1500,7 @@ function applySnapshot(snap){
   const ok=v=>!v||placeById[v]||v.startsWith('any:');
   Object.assign(state,sn);
   state.acts=state.acts.map(a=>({...a,id:'a'+(++nextId),place:ok(a.place)?a.place:''}));
+  refreshUsual();
   if(sn.goal&&sn.goal.startsWith('max:')){const k=snap.acts.findIndex(a=>'max:'+a.id===sn.goal);state.goal=k>=0?'max:'+state.acts[k].id:'smooth';}
   ['start','end'].forEach(k=>{if(!placeById[state[k].place])state[k].place='home';});
 }
@@ -1350,7 +1530,9 @@ async function applyQuick(){
   state.end.leg=r.end&&r.end.leg||null;
   if(r.acts.length){
     state.acts=r.acts.map(a=>({id:'a'+(++nextId),label:a.label,place:a.place||'',placeText:a.placeText,min:a.min??30,max:a.min==null?60:(a.max==null?'':a.max),after:a.after||'',by:a.by||'',auto:!a.label,leg:a.leg||null}));
-    r.acts.forEach(a=>{if(a.min==null)notes.push(`No time given for "${a.label||a.placeText}", so I used 30m to 1h.`);});
+    state.acts.forEach((a,k)=>{const src=r.acts[k];
+      if(src.min==null){useUsual(a);if(!a.usual||a.place.startsWith('any:'))notes.push(`No time given for "${a.label||a.placeText}", so I used 30m to 1h.`);}
+      else if(a.place&&a.place.startsWith('any:'))a.usual=true;});
   }else notes.push("I couldn't find any stops in that. Try something like: "+quickExample());
   if(r.ignored.length)notes.push('I skipped: '+r.ignored.map(x=>`"${x}"`).join(', '));
   // goal: the stop named in "most time at …", or the open-ended stop (like "3h+")
@@ -1404,25 +1586,48 @@ function acLocal(key,q){
   });
   return out;
 }
+// a pasted spot: "44.3051, -78.3195", or a Google Maps link with coordinates in it
+function coordsIn(q){
+  const m=q.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)||q.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)||
+    q.match(/[?&](?:q|query|ll|destination|center)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/i)||q.match(/^\s*\(?(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})\)?\s*$/);
+  if(!m)return null;const lat=+m[1],lon=+m[2];
+  return Math.abs(lat)<=90&&Math.abs(lon)<=180?{lat,lon}:null;
+}
+let CITY_BBOX=null;
+function cityBBox(){ // the area the city's buses cover, a little wider
+  if(CITY_BBOX&&CITY_BBOX.id===BUNDLE.id)return CITY_BBOX.v;
+  let w=Infinity,s=Infinity,e=-Infinity,n=-Infinity;
+  NET.stops.forEach(st=>{const [lon,lat]=cityLonLat(st.x,st.y);w=Math.min(w,lon);e=Math.max(e,lon);s=Math.min(s,lat);n=Math.max(n,lat);});
+  const v=[w-0.05,s-0.04,e+0.05,n+0.04].map(x=>x.toFixed(4)).join(',');CITY_BBOX={id:BUNDLE.id,v};return v;
+}
+async function photon(q,extra,signal){
+  const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=12&lang=en${extra}`,{signal});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const js=await r.json();
+  return (js.features||[]).map(f=>{const [lon,lat]=f.geometry.coordinates;const L=acLabel(f.properties||{});
+    return {...L,kind:'addr',lon,lat,x:(lon-LON0)*KX,y:(lat-LAT0)*KY};});
+}
 async function acSearch(key,q){
   const list=$('#ac-list-'+key);if(!list)return;
   const local=acLocal(key,q);
+  const pin=coordsIn(q);
+  if(pin){const x=(pin.lon-LON0)*KX,y=(pin.lat-LAT0)*KY;
+    acShow(key,Math.hypot(x,y)<30?[{kind:'addr',title:'Pinned spot',sub:`${pin.lat.toFixed(5)}, ${pin.lon.toFixed(5)}`,q:`${pin.lat.toFixed(6)},${pin.lon.toFixed(6)}`,lon:pin.lon,lat:pin.lat,x,y,first:true}]:[],
+      Math.hypot(x,y)<30?'':`That spot is more than 30 km from ${BUNDLE.name}.`);return;}
+  if(/^https?:\/\//.test(q)){acShow(key,[],"That link doesn't include coordinates. In Google Maps, press and hold the spot to drop a pin, then copy the numbers it shows (like 44.3051, -78.3195) and paste them here.");return;}
   if(q.length<2){acShow(key,local,'');return;}
-  acShow(key,local,'Searching addresses…');
+  acShow(key,local,'Searching addresses and businesses…');
   const c=acCenter(),[clon,clat]=cityLonLat(c.x,c.y);
-  if(AC.ctrl)AC.ctrl.abort();AC.ctrl=new AbortController();
-  try{
-    const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=12&lang=en&lat=${clat.toFixed(5)}&lon=${clon.toFixed(5)}`,{signal:AC.ctrl.signal});
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    const js=await r.json();
-    const found=(js.features||[]).map(f=>{const [lon,lat]=f.geometry.coordinates;const L=acLabel(f.properties||{});
-      return {...L,kind:'addr',lon,lat,x:(lon-LON0)*KX,y:(lat-LAT0)*KY};});
-    const near=found.filter(f=>Math.hypot(f.x,f.y)<30); // stay within about 30 km of the city
-    acShow(key,[...local,...near],near.length||local.length?'':'No matches nearby. Try adding a street name.');
-  }catch(e){
-    if(e.name==='AbortError')return;
-    acShow(key,local,"Address search isn't reachable right now. You can still pick from the city's places.");
-  }
+  if(AC.ctrl)AC.ctrl.abort();AC.ctrl=new AbortController();const sig=AC.ctrl.signal;
+  // two searches at once: one only inside the city (so a nearby "Chowk" isn't crowded out by ones far away), one nearby-first
+  const res=await Promise.allSettled([photon(q,`&bbox=${cityBBox()}`,sig),photon(q,`&lat=${clat.toFixed(5)}&lon=${clon.toFixed(5)}`,sig)]);
+  if(sig.aborted)return;
+  const ok=res.filter(r=>r.status==='fulfilled');
+  if(!ok.length){acShow(key,local,"Address search isn't reachable right now. You can still pick from the city's places, or paste coordinates.");return;}
+  const seen=new Set(),near=[];
+  ok.flatMap(r=>r.value).forEach(f=>{const k=f.title+'|'+f.lon.toFixed(4)+'|'+f.lat.toFixed(4);if(seen.has(k)||Math.hypot(f.x,f.y)>=30)return;seen.add(k);near.push(f);});
+  const eatsNote=EXTRA[BUNDLE.id]?'':' The restaurant list for this city hasn\'t loaded, so only addresses were searched.';
+  acShow(key,[...local,...near],near.length||local.length?'':`No matches nearby. Try a street name, or paste the spot's coordinates or a Google Maps link.${eatsNote}`);
 }
 function acShow(key,items,msg){
   const list=$('#ac-list-'+key),input=$('#addr-'+key);if(!list)return;
@@ -1438,7 +1643,8 @@ function acClose(key){
   const l=$('#ac-list-'+key);if(l)l.hidden=true;const i=$('#addr-'+key);if(!i)return;i.setAttribute('aria-expanded','false');
   const box=i.closest('.ac');
   if(box&&box.dataset.kind==='pick'){ // put back the current choice if nothing was picked
-    const cur=key==='start'?state.start.place:key==='end'?state.end.place:(state.acts.find(a=>'act-'+a.id===key)||{}).place;
+    const cur=key==='start'?state.start.place:key==='end'?state.end.place:key==='fstart'?state.free.start:key==='fend'?state.free.end
+      :key.startsWith('free-')?(state.free.places.find(q=>'free-'+q.id===key)||{}).place:(state.acts.find(a=>'act-'+a.id===key)||{}).place;
     i.value=placeName(cur);i.classList.toggle('needs',!cur);
   }
 }
@@ -1532,11 +1738,81 @@ function updateBar(){
   const show=$('#app').classList.contains('view-setup')&&result;
   bar.hidden=!show;if(!show)return;
   bar.innerHTML=result.ok
-    ?`<div><span class="eyebrow">Best plan · ${esc(result.picks[0].tag)}</span><strong>Leave ${fmt(result.picks[0].p.start)} · back ${fmt(result.picks[0].p.end)}</strong></div><button class="go" data-bar="see">See ${result.picks.length} plan${result.picks.length>1?'s':''}</button>`
-    :`<div><span class="eyebrow">No plan fits yet</span><strong>${esc((result.reasons||[''])[0]).slice(0,90)}</strong></div><button class="go" data-bar="see">Why</button>`;
+    ?`<div><span class="eyebrow">${result.closest?'Closest plan · bends some settings':'Best plan · '+esc(result.picks[0].tag)}</span><strong>Leave ${fmt(result.picks[0].p.start)} · back ${fmt(result.picks[0].p.end)}</strong></div><button class="go" data-bar="see">See ${result.picks.length} plan${result.picks.length>1?'s':''}</button>`
+    :`<div><span class="eyebrow">${result.inp&&result.inp.free?'Free day':'No plan fits yet'}</span><strong>${esc((result.reasons||[''])[0]).slice(0,90)}</strong></div><button class="go" data-bar="see">Why</button>`;
 }
 
+/* ---------- where am I, and the live trip ---------- */
+const me={watch:null,pos:null,err:''};
+const live={on:false,timer:null,scrolled:false};
+function locStart(){
+  if(me.watch!=null)return;
+  if(!navigator.geolocation){me.err="This browser can't share your location.";drawMe();return;}
+  me.err='Finding you…';drawMe();
+  me.watch=navigator.geolocation.watchPosition(pos=>{
+    const lon=pos.coords.longitude,lat=pos.coords.latitude;
+    me.pos={lon,lat,acc:pos.coords.accuracy||0,x:(lon-LON0)*KX,y:(lat-LAT0)*KY,t:Date.now()};me.err='';drawMe();updateLive();
+  },err=>{me.err=err.code===1?'Location is blocked for this site. Allow it in your browser settings.':"Couldn't find your location right now.";drawMe();},
+  {enableHighAccuracy:true,maximumAge:10000,timeout:20000});
+}
+function locStop(){if(me.watch!=null&&navigator.geolocation)navigator.geolocation.clearWatch(me.watch);me.watch=null;me.pos=null;me.err='';}
+function drawMe(){
+  const g=$('#me-dot'),msg=$('#me-msg');if(!g)return;
+  if(!me.pos){g.innerHTML='';if(msg)msg.textContent=me.watch!=null?me.err:'';return;}
+  const [x,y]=P(me.pos.x,me.pos.y),inside=me.pos.x>=MB[0]&&me.pos.x<=MB[2]&&me.pos.y>=MB[1]&&me.pos.y<=MB[3];
+  const r=Math.min(80,Math.max(8,me.pos.acc/1000*S));
+  g.innerHTML=inside?`<circle class="m-me-acc" cx="${x}" cy="${y}" r="${r.toFixed(1)}"/><circle class="m-me" cx="${x}" cy="${y}" r="7"><title>You are here</title></circle>`:'';
+  if(msg)msg.textContent=inside?`You're the blue dot (accurate to about ${Math.round(me.pos.acc)} m).`:`You're about ${Math.round(Math.hypot(me.pos.x,me.pos.y))} km from ${BUNDLE.name}, outside this map.`;
+}
+const nowMin=()=>{const d=new Date();return d.getHours()*60+d.getMinutes()+d.getSeconds()/60;};
+const isToday=()=>isoDate(planDate())===isoDate(new Date());
+// the next departure of the same route from the same stop, for "if you miss it"
+function nextDep(routeId,stop,after){
+  let best=Infinity;
+  NET.trips.forEach(tr=>{if(tr.r.id!==routeId)return;for(let k=0;k<tr.ids.length-1;k++)if(tr.ids[k]===stop&&tr.times[k]>after)best=Math.min(best,tr.times[k]);});
+  return best<Infinity?best:null;
+}
+function liveStart(){
+  if(!result||!result.ok)return;
+  if(!isToday()){live.msg=`Live trips follow today's clock, but this plan is for ${planDate().toLocaleDateString('en-CA',{weekday:'long',month:'short',day:'numeric'})}. Set the date to today (or tap Leave now) first.`;live.on=false;renderMain();return;}
+  live.on=true;live.msg='';live.scrolled=false;locStart();clearInterval(live.timer);live.timer=setInterval(updateLive,15000);renderMain();
+}
+function liveStop(){live.on=false;live.msg='';clearInterval(live.timer);live.timer=null;renderMain();}
+function updateLive(){
+  const bar=$('#livebar');if(!bar)return;
+  document.querySelectorAll('.tl>li.now').forEach(li=>li.classList.remove('now'));
+  if(!live.on||!result||!result.ok){bar.hidden=!live.msg;bar.innerHTML=live.msg?`<span>${esc(live.msg)}</span>`:'';return;}
+  const p=result.picks[selected].p,inp=result.inp,now=nowMin(),lines=[];
+  const lis=[...document.querySelectorAll('.tl>li')];let cur=null;lis.forEach(li=>{if(+li.dataset.t<=now)cur=li;});
+  if(cur){cur.classList.add('now');if(!live.scrolled){cur.scrollIntoView({block:'center',behavior:'smooth'});live.scrolled=true;}}
+  const startP=placeById[inp.start.place],steps=p.legs.flatMap(l=>l.op.steps);
+  if(now>=p.end){lines.push(`<strong>You made it. That's the whole day.</strong>`);}
+  else if(now<p.start){lines.push(`<strong>Leave ${esc(startP.n)} in ${fmtDur(p.start-now)}, at ${fmt(p.start)}.</strong>`);}
+  else{
+    const k=p.legs.findIndex((l,i)=>i<p.legs.length-1&&l.s<=now&&now<p.legs[i+1].op.leave);
+    if(k>=0){const a=inp.acts[p.order[k]],until=p.legs[k+1].op.leave;lines.push(`<strong>${esc(a.label)} at ${esc(p.legs[k].to.n)}: ${fmtDur(until-now)} left, leave at ${fmt(until)}.</strong>`);}
+    else{const st=steps.find(x=>x.t0<=now&&now<x.t1);
+      if(st&&st.k==='ride')lines.push(`<strong>On the ${esc(NET.trips[st.trip].r.id)}: get off at ${esc(NET.stops[st.to].n)}, ${fmt(st.t1)}.</strong>`);
+      else if(st&&st.k==='wait')lines.push(`<strong>Waiting at ${esc(NET.stops[st.at].n)}: bus at ${fmt(st.t1)}.</strong>`);
+      else if(st&&st.k==='walk')lines.push(`<strong>Walking to ${esc(nm(st.to))}, about ${fmtDur(st.t1-now)}.</strong>`);}
+  }
+  const nr=now<p.end&&steps.find(x=>x.k==='ride'&&x.t0>=now-0.5);
+  if(nr){
+    const tr=NET.trips[nr.trip],stop=NET.stops[nr.from],left=nr.t0-now;
+    lines.push(`<span>Next bus: ${esc(tr.r.id)} at ${fmt(nr.t0)} from ${esc(stop.n)}, in ${fmtDur(Math.max(0,left))}.</span>`);
+    if(me.pos&&!steps.some(x=>x.k==='ride'&&x.t0<=now&&now<x.t1)){
+      const d=Math.hypot(me.pos.x-stop.x,me.pos.y-stop.y),w=walkMin(me.pos,stop);
+      if(d<0.06)lines.push(`<span>You're at the stop.</span>`);
+      else if(w+inp.buffer>left){const nx=nextDep(tr.r.id,nr.from,nr.t0);
+        lines.push(`<span class="warn">You're about ${w} min walk from the stop, so you may miss it.${nx!=null?` The next ${esc(tr.r.id)} from there is at ${fmt(nx)}.`:''}</span>`);}
+      else lines.push(`<span>You're about ${w} min walk from the stop: on track.</span>`);
+    }else if(me.watch!=null&&!me.pos)lines.push(`<span>${esc(me.err||'Finding you…')}</span>`);
+  }
+  bar.hidden=false;bar.innerHTML=lines.join('');
+}
 $('#main').addEventListener('click',e=>{
+  if(e.target.closest('[data-loc]')){if(me.watch!=null){locStop();if(live.on)liveStop();else renderMain();}else{locStart();renderMain();}return;}
+  if(e.target.closest('[data-live]')){live.on?liveStop():liveStart();return;}
   const sv=e.target.closest('[data-saveplace]');
   if(sv){const p=placeById[sv.dataset.saveplace];if(p){savePlace({title:p.n,sub:p.sub,q:p.q,x:p.x,y:p.y,osm:true,from:p.id},p.n,'food');shareMsg=`Saved ${p.n}. Rename it under Your places.`;save();renderSetup();renderMain();}return;}
   const sh=e.target.closest('[data-share]');if(sh){shareAction(sh.dataset.share);return;}
@@ -1605,6 +1881,7 @@ async function shareAction(kind){
   if(!result||!result.ok)return;
   if(kind==='ics'){download('foxpaths-day.ics',icsFile(),'text/calendar');setShareMsg('Calendar file downloaded. Open it to add the plan to your calendar.');}
   else if(kind==='text'){setShareMsg(await copyText(planText())?'Plan copied. Paste it into a message or note.':"Couldn't copy. Your browser blocked it.");}
+  else if(kind==='saveday'){setView('setup');savingDay={name:''};renderSetup();setTimeout(()=>{const n=$('#dayname');if(n){n.scrollIntoView({block:'center'});n.focus();}},0);}
   else if(kind==='link'){const u=shareLink();setShareMsg(await copyText(u)?"Link copied. Home and School/Work open as the other person's own places.":"Couldn't copy the link.");}
 }
 function applyShare(sh){

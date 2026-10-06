@@ -46,6 +46,22 @@ Newmarket and Waterloo, Ontario.
   ±15 min of leeway. Exactly means you leave at that time and wait at the stop if needed; leeway lets FoxPaths leave a
   little earlier or later to catch a better bus. In Type your day: "leave home at 10" (exactly), "around 10" (±15),
   "at 10 give or take 10 min"
+- **Usual time at a place**: give a saved place a usual time ("KFC: 20m" to order and eat). Stops there fill it in
+  automatically, typed days use it when you don't give a time, and "One of my saved restaurants" uses each place's own
+- **Always a plan**: if nothing fits every setting, FoxPaths still shows the closest plans, fastest first, and lists
+  exactly which settings they bend (bus-change limits, arrival time, stop time limits, walking further) and why nothing
+  fit
+- **Plan a saved day fresh**: ▶ Now next to a saved day loads it and plans it from right now with today's buses and
+  your usual times. "Save this day" also sits under the plans
+- **Free day**: a separate tab for days with no set times. List places (a zoo, a park, the library, a restaurant),
+  and FoxPaths picks the order and a starting time at each from the kind of place, or your usual time there. Tap
+  Shorter or Longer on any place, then "Fine-tune in the planner" to carry the plan into the full planner
+- **Find places by name**: search looks inside the city first, so a local spot isn't crowded out by places with the
+  same name elsewhere, and restaurant names from OpenStreetMap show instantly. If a place isn't in OpenStreetMap,
+  paste its coordinates (in Google Maps, press and hold the spot) or a full Google Maps link
+- **Where am I and live trips**: "Where am I?" puts a blue dot on the map. "Start trip" follows the plan on today's
+  clock, highlights the current step, says how long you have left, and warns when you're too far from the stop to
+  catch the next bus, with the time of the one after
 - **Which side of the street**: for every bus, which way it's heading, which side of the street to wait on (buses
   drive on the right, so the stop is on the right-hand side of travel), and a Street View link to the stop. For the
   ION light rail it names the platform direction instead
