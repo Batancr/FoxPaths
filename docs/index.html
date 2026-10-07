@@ -4,6 +4,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Plan a whole day of stops around the bus in Peterborough, Newmarket and Waterloo, Ontario.">
 <title>FoxPaths Peterborough</title>
+<meta name="theme-color" content="#0A6B4D">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="FoxPaths">
+<meta property="og:title" content="FoxPaths: plan a whole day of stops around the bus">
+<meta property="og:description" content="Tell it where you want to go and for how long. FoxPaths works out the buses, walks and waits in Peterborough, Newmarket and Waterloo, Ontario.">
+<meta property="og:url" content="https://batancr.github.io/FoxPaths/">
+<meta property="og:image" content="https://batancr.github.io/FoxPaths/icons/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="FoxPaths: plan a whole day of stops around the bus">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap">
@@ -51,6 +65,13 @@ button,input,select{font:inherit;color:inherit}
 .brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
 .brand h1{font-family:var(--f-display);font-weight:800;font-size:44px;line-height:.9;letter-spacing:.01em;text-transform:uppercase}
 .brand p{margin:0;color:var(--muted);font-size:14px}
+.sched-bar{margin:-4px 0 14px;padding:9px 12px;border-radius:var(--r);background:var(--signal-soft);color:var(--ink);font-size:14px}
+.sched-bar.over{background:var(--danger-soft)}
+.sched-bar strong{color:var(--signal)}
+.sched-bar.over strong{color:var(--danger)}
+.bottomline{display:grid;gap:4px;padding:12px 14px;border-radius:var(--r);background:var(--accent-soft);border-left:4px solid var(--accent);font-size:15px;line-height:1.45}
+.bottomline .eyebrow{color:var(--accent)}
+.opt .why{font-size:12.5px;color:var(--accent);font-weight:700}
 .demo-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:var(--signal-soft);color:var(--signal);font-size:13px;font-weight:700}
 .demo-pill::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--signal)}
 
@@ -290,6 +311,7 @@ details.more[open]>summary h2::after{content:" −"}
 
   <div class="demo-bar" id="demo-bar" hidden>Example mode: try anything, nothing is saved. <a href="./">Back to your own plans</a></div>
   <nav class="cities" id="cities" aria-label="City"></nav>
+  <div class="sched-bar" id="sched-bar" role="status" hidden></div>
 
   <div class="tabs" role="tablist">
     <button role="tab" id="tab-setup" data-view="setup" aria-selected="false">Your day</button>
@@ -1233,6 +1255,43 @@ function rowHTML(r){
     :`<div class="main-line">${r.main}</div>${r.sub?`<div class="sub">${r.sub}</div>`:''}${r.help||''}${r.link||''}`;
   return `<li class="k-${r.k}" data-t="${r.t}"${style}><time>${fmt(r.t)}</time><span class="dot" aria-hidden="true"></span><div class="body">${body}</div></li>`;
 }
+// one or two sentences on what matters in the plan you're looking at
+function bottomLine(p,inp){
+  const startP=placeById[inp.start.place],endP=p.legs[p.legs.length-1].to,parts=[];
+  parts.push(`Leave ${esc(startP.n)} at <strong>${fmt(p.start)}</strong> and arrive at ${esc(endP.n)} by <strong>${fmt(p.end)}</strong>.`);
+  const gid=inp.goal.startsWith('max:')?inp.goal.slice(4):null;
+  const main=(gid&&inp.acts.find(a=>a.id===gid))||inp.acts.slice().sort((a,b)=>(p.durs[b.id]||0)-(p.durs[a.id]||0))[0];
+  if(main){const k=p.order.indexOf(inp.acts.indexOf(main));parts.push(`You get <strong>${fmtDur(p.durs[main.id])}</strong> for ${esc(main.label.toLowerCase())}${k>=0?' at '+esc(p.legs[k].to.n.split(',')[0]):''}.`);}
+  // tightest bus change: time between getting off one bus (plus any walk) and the next bus leaving
+  let tight=null;
+  p.legs.forEach(l=>{const st=l.op.steps;for(let i=0;i<st.length;i++){if(st[i].k!=='ride')continue;
+    for(let j=i+1;j<st.length;j++){if(st[j].k==='ride'){const walk=st.slice(i+1,j).filter(x=>x.k==='walk').reduce((t,x)=>t+x.w,0),gap=st[j].t0-st[i].t1-walk;
+      if(!tight||gap<tight.gap)tight={gap,at:NET.stops[st[j].from].n};break;}}}});
+  if(tight)parts.push(tight.gap<=3?`Watch the bus change at ${esc(tight.at)}: only <strong>${fmtDur(Math.max(0,tight.gap))}</strong> to spare.`:`The tightest bus change is ${fmtDur(tight.gap)} at ${esc(tight.at)}.`);
+  else if(p.transfers===0&&p.legs.some(l=>l.op.rides))parts.push('No bus changes.');
+  return parts.join(' ');
+}
+// what this plan does better than the others shown
+function whyLine(i,inp){
+  const ps=result.picks.map(x=>x.p),p=ps[i],others=ps.filter((_,j)=>j!==i);
+  if(!others.length)return result.closest?'':'The only plan of its kind that fits';
+  const adv=(f,dir)=>dir*(f(p)-dir*Math.max(...others.map(o=>dir*f(o))));
+  const gid=inp.goal.startsWith('max:')?inp.goal.slice(4):null,ga=gid&&inp.acts.find(a=>a.id===gid);
+  const out=[];
+  if(ga)out.push([adv(x=>x.durs[gid]??0,1),d=>`${fmtDur(d)} more ${ga.label.toLowerCase()} time`]);
+  out.push([adv(x=>x.wait+x.spare,-1),d=>`${fmtDur(d)} less time wasted`]);
+  out.push([adv(x=>x.wait,-1),d=>`${fmtDur(d)} less waiting`]);
+  out.push([adv(x=>x.walk,-1),d=>`${fmtDur(d)} less walking`]);
+  out.push([adv(x=>x.end,-1),d=>`back ${fmtDur(d)} earlier`]);
+  out.push([adv(x=>x.start,1),d=>`leaves ${fmtDur(d)} later`]);
+  const tr=adv(x=>x.transfers,-1);if(tr>=1)out.push([tr*15,()=>`${tr} fewer bus change${tr>1?'s':''}`]);
+  const good=out.filter(([d])=>d>=1).sort((a,b)=>b[0]-a[0]);
+  // "less time wasted" usually just repeats "less waiting"
+  const keep=[];for(const [d,f] of good){const t=f(Math.round(d));if(/wasted/.test(t)&&good.some(([,g])=>/waiting/.test(g(1))))continue;keep.push(t);if(keep.length>=2)break;}
+  if(keep.length)return 'Why: '+keep.join(' · ');
+  if(others.some(o=>o.order.join()!==p.order.join()))return 'Why: same day in a different order';
+  return '';
+}
 function optionCard(pick,i,inp){
   const p=pick.p;
   const actRows=p.order.map(oi=>{const a=inp.acts[oi];return `<dt>${esc(a.label)}</dt><dd>${fmtDur(p.durs[a.id])}</dd>`;}).join('');
@@ -1241,6 +1300,7 @@ function optionCard(pick,i,inp){
   return `<button class="opt" data-opt="${i}" aria-pressed="${i===selected}">
     <span class="tag">${esc(pick.tag)}</span>
     <span class="span">${fmt(p.start)} → ${fmt(p.end)}</span>
+    ${(w=>w?`<span class="why">${esc(w)}</span>`:'')(whyLine(i,inp))}
     ${inp.start.at==null&&!inp.free&&p.start-inp.start.from>=10?`<span class="picked">Stay ${fmtDur(p.start-inp.start.from)} more before you leave</span>`:''}
     <dl>${actRows}<dt>Waiting</dt><dd>${fmtDur(p.wait)}</dd><dt>Walking</dt><dd>${fmtDur(p.walk)}</dd><dt>Bus changes</dt><dd>${p.transfers}</dd></dl>
     ${order}${picked.length?`<div class="picked">App picked: ${picked.join(', ')}</div>`:''}
@@ -1266,6 +1326,7 @@ function renderMain(){
     <div class="status"><h2>${result.closest?'Closest plan':`${result.picks.length} plan${result.picks.length>1?'s':''} for your day`}</h2>
       <p>Compared ${result.count.toLocaleString()} workable schedules${result.truncated?' (search capped)':''} in ${result.ms} ms</p></div>
     ${bend}
+    <div class="bottomline" role="status"><span class="eyebrow">Bottom line · ${esc(pick.tag)}</span><span>${bottomLine(pick.p,inp)}</span></div>
     <div class="options">${result.picks.map((p,i)=>optionCard(p,i,inp)).join('')}</div>
     <div class="sharebar">
       <button type="button" class="chip" data-share="ics">Add to calendar</button>
@@ -1958,6 +2019,19 @@ function renderCityChrome(){
   const pill=$('#city-pill');pill.textContent=BUNDLE.info.pill;pill.hidden=!BUNDLE.info.pill;
   $('#city-source').textContent=BUNDLE.info.source;
   document.title='FoxPaths '+BUNDLE.name;
+  renderSchedBar();
+}
+// warn ahead of time when a city's schedule file is about to run out, and after it has
+function renderSchedBar(){
+  const bar=$('#sched-bar'),c=CITY_LIST.find(x=>x.id===store.city);if(!bar)return;
+  if(!c||!c.validUntil){bar.hidden=true;return;}
+  const today=new Date();today.setHours(0,0,0,0);
+  const end=dayInfo(c.validUntil).date,left=Math.round((end-today)/864e5),when=dayInfo(c.validUntil).label.replace(/^\w+, /,'');
+  if(left>14){bar.hidden=true;return;}
+  bar.hidden=false;bar.classList.toggle('over',left<0);
+  bar.innerHTML=left<0
+    ?`<strong>${esc(c.name)}'s bus schedules on file ended ${esc(when)}.</strong> Plans may use old times until FoxPaths gets the new schedule. Check with the transit agency before you travel.`
+    :`<strong>${esc(c.name)}'s bus schedules on file end ${esc(when)}${left===0?', today':left===1?', tomorrow':`, in ${left} days`}.</strong> Plans for after that may use old times until FoxPaths gets the new schedule.`;
 }
 function loadCityData(c){
   window.FOXPATH_CITIES=window.FOXPATH_CITIES||{};

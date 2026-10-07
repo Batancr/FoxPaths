@@ -180,12 +180,37 @@ Notes on this routine:
 - **Ideas not built yet:** restaurant opening hours, Cambridge in the Waterloo
   tab, and Toronto, whose GTFS is too large to load whole in a phone browser and would need trimming.
 
+## Ideas reviewed 7 Oct 2026
+
+A cross-project review suggested 13 ideas from Alexander's other projects. Alexander said to build the ones recommended
+for now; the rest follow the recommendation below and haven't been individually confirmed, so a later chat can ask
+about any "later" item when it becomes relevant, but shouldn't re-run the whole review.
+
+| ID | Idea | Decision |
+| --- | --- | --- |
+| FP-1 | Timetable refresh + expiry warning | Banner built (shows 14 days before a city's schedule ends, and after). Automatic weekly refresh (GitHub Action): later; first check that GitHub's servers can download from yrt.ca and Transitous |
+| FP-2 | Private source, public site (publish.sh) | Later |
+| FP-3 | Planner in a Web Worker | Later, only if typing lags on a phone |
+| FP-4 | "Bottom line" box above the plans | Built |
+| FP-5 | "Why this plan?" | Built (one line per plan card; the closest-plan box already listed bent settings) |
+| FP-6 | Review a saved day | Later |
+| FP-7 | Marked example days + "Make it mine" | Later |
+| FP-8 | Trip stats and badges | Later, after real use of Start trip |
+| FP-9 | Confidence levels on stop times | Later |
+| FP-10 | "Beat the planner" challenge links | Skip |
+| FP-11 | Encrypted sync across devices | Skip for now (backup and restore covers it) |
+| FP-12 | Link preview + Add to Home Screen | Built (preview tags, icons, web app manifest). Offline mode left out: it could keep serving old schedules |
+| FP-13 | Ownership canary | Skip (only matters after FP-2) |
+
+Time-sensitive: YRT's schedule file ends Oct 31, 2026. A new file from YRT is the real fix; the banner only warns.
+
 ## Where things are
 
 | Path | What it is |
 | --- | --- |
 | `docs/index.html` | The whole site: styles, the planning engine (`<script id="engine">`) and the interface. |
 | `docs/dayparse.js` | The "Type your day" sentence reader. |
+| `docs/manifest.webmanifest`, `docs/icons/` | Home-screen install details, app icons and the link preview image (made with Pillow; an original mark, not a logo from elsewhere). |
 | `docs/data/<city>.js` | Generated city data. Don't edit by hand. |
 | `tools/build_peterborough.py` | Builds Peterborough from the City's files, with timepoint interpolation. |
 | `tools/gtfs_city.py` | General GTFS reader used by the other city builders. |

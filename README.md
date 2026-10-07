@@ -62,6 +62,10 @@ Newmarket and Waterloo, Ontario.
 - **Where am I and live trips**: "Where am I?" puts a blue dot on the map. "Start trip" follows the plan on today's
   clock, highlights the current step, says how long you have left, and warns when you're too far from the stop to
   catch the next bus, with the time of the one after
+- **Bottom line and why**: a short summary above the plans (when to leave, your time at the main stop, the tightest
+  bus change), and a line on each plan saying what it does better than the others
+- **Schedule warning**: a banner from 14 days before a city's schedule file runs out, and after
+- **Add to Home Screen**: FoxPaths can be installed on a phone with its own icon, and shared links show a preview card
 - **Which side of the street**: for every bus, which way it's heading, which side of the street to wait on (buses
   drive on the right, so the stop is on the right-hand side of travel), and a Street View link to the stop. For the
   ION light rail it names the platform direction instead
